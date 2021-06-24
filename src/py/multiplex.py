@@ -331,6 +331,7 @@ RE_LINE = re.compile(
 
 def parse(line: str):
     match = RE_LINE.match(line)
+    # TODO: Should be a bit more sophisticated
     assert match
     key = match.group("key")
     delay = match.group("delay")
@@ -362,7 +363,8 @@ def cli(args=sys.argv[1:]):
     for command in args.commands:
         # FIXME: This is not correct, should take into consideration the \, etc.
         key, delay, actions, cmd = parse(command)
-        print((key, delay, actions, cmd))
+        # FIXME: Delay is not correct, we should sort the commands by delay and
+        # do that here instead of from the runner.
         runner.run(cmd, key=key, delay=delay, actions=actions)
     if args.timeout:
         runner.join(timeout=args.timeout)
