@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Callable, Union, TypeVar, Generic, cast
+from typing import List, Dict, Optional, Callable, Union, TypeVar, Generic, Tuple
 from subprocess import Popen, PIPE
 from threading import Thread
 from io import BytesIO
@@ -118,10 +118,14 @@ class Runner:
         return cls.Instance
 
     def __init__(self):
-        self.threads: Dict[str, Thread] = {}
-        self.commands: Dict[str, Command] = {}
+        self.commands: Dict[str, Tuple[Command, Thread]] = {}
         self.formatter: Formatter = Formatter()
         self.registerSignals()
+
+    def getActiveCommands(self, commands: Optional[Dict[str, Tuple[Command, Thread]]]) -> Dict[str, Tuple[Command, Thread]]:
+        """Returns the subset of commands that are active."""
+        commands = commands or self.commands
+        return dict((k, v) for k, v in commands.items() if v[1].is_alive())
 
     # --
     # ### Event dispatching
@@ -162,62 +166,90 @@ class Runner:
     #
     # These are the key primitives that
     def run(self, command: List[str]) -> Command:
-        key = str(len(self.threads))
+        key = str(len(self.commands))
         cmd = Command(command, key)
-        t = Thread(target=popen, args=(command,
-                                       lambda _: self.doOut(cmd, _),
-                                       lambda _: self.doErr(cmd, _),
-                                       lambda _: self.doEnd(cmd, _)))
-        t.start()
-        cmd.pid = t.native_id
-        self.threads[key] = t
-        self.commands[key] = cmd
+        # We create a process
+        process = Popen(command, stdout=PIPE, stderr=PIPE, bufsize=0)
+        cmd.pid = process.pid
+        # NOTE: We could have just one reader thread that selects, as opposed
+        # to having multiple threads that read from each process.
+        thread = Thread(
+            target=self.reader_threaded,
+            args=(
+                process,
+                lambda _: self.doOut(cmd, _),
+                lambda _: self.doErr(cmd, _),
+                lambda _: self.doEnd(cmd, _)))
+        thread.start()
+        self.commands[key] = (cmd, thread)
         self.doStart(cmd)
         return cmd
 
-    def join(self, *comamnds: Command, timeout: Optional[int] = None) -> bool:
+    def reader_threaded(self, process: Popen, out: Optional[BytesConsumer] = None, err: Optional[BytesConsumer] = None, end: Optional[Callable[[int], None]] = None):
+        """A low-level, streaming blocking reader that calls back `out` and `err` consumers
+        upon data."""
+        # SEE: https://github.com/python/cpython/blob/3.9/Lib/subprocess.py
+        channels = dict((_[0].fileno(), _)
+                        for _ in ((process.stdout, out), (process.stderr, err)))
+        # NOTE: We could simply return the process here and do the multiplexing
+        # in the select directly, but the intention is that the `run` command
+        # is run in a thread. We use the low-level POSIX APIs in order to
+        # do the minimum amount of buffering.
+        while waiting := [_ for _ in channels]:
+            for fd in select.select(waiting, [], [])[0]:
+                chunk = os.read(fd, 64_000)
+                if chunk:
+                    if (handler := channels[fd][1]):
+                        handler(chunk)
+                else:
+                    os.close(fd)
+                    del channels[fd]
+        if end:
+            end(process.returncode or 0)
+
+    def join(self, *commands: Command, timeout: Optional[int] = None) -> bool:
+        """Joins all or the given list of commands, waiting indefinitely or up
+        to the given `timeout` value."""
+        selection = dict((k, v) for k, v in self.commands.items(
+        ) if v[0] in commands) if commands else self.commands
         started = time.time()
         elapsed = 0
-        while (alive_count := len([_ for _ in self.threads.values() if _.is_alive()])) and (timeout is None or elapsed < timeout):
-            t = (timeout/alive_count) if timeout else None
-            print("TIMEOUT", t, timeout, alive_count)
-            for _ in self.threads.values():
-                _.join(timeout=t)
-                # FIXME: We should indicate termination there
+        while (active := self.getActiveCommands(selection)) and (timeout is None or elapsed < timeout):
+            t = (timeout/len(active)) if timeout else None
+            for _, thread in active.values():
+                thread.join(timeout=t)
             elapsed = time.time() - started
-        for t in self.threads.values():
-            if t.is_alive():
-                return False
-        print("Joining")
-        return True
+        return not self.getActiveCommands(selection)
 
-    def terminate(self, resolution=0.1, timeout=5) -> bool:
-        print("Termination started")
+    def terminate(self, *commands: Command, resolution=0.1, timeout=5) -> bool:
+        """Terminates given list of commands, waiting indefinitely or up
+        to the given `timeout` value."""
+        # We extract the commands the the corresponding threads
+        selection = dict((k, v) for k, v in self.commands.items(
+        ) if v[0] in commands) if commands else self.commands
+        # Now we iterate and kill, the command processes, the threads will die
+        # off accordingly.
         started = time.time()
         iteration = 0
-        while self.threads:
-            # We try to stop the threads that are alive
-            print("Terminating", self.threads)
-            for _ in self.threads.values():
-                if _.is_alive():
+        while selection:
+            for cmd, _ in selection.values():
+                if cmd.pid is not None:
                     try:
-                        res = os.kill(
-                            _.native_id, self.SIGNALS["SIGHUP" if iteration == 0 else "SIGINT"])
-                        print("RES=", res)
-                    except ProcessLookupError as e:
-                        # It's now dead
+                        os.kill(
+                            cmd.pid, self.SIGNALS["SIGHUP" if iteration == 0 else "SIGINT"])
+                    except OSError:
+                        pass
+                    except ProcessLookupError:
                         pass
             iteration += 1
-            self.threads = dict((k, v)
-                                for k, v in self.threads.items() if v.is_alive())
             # We exit early after the timeout
             elapsed = time.time() - started
             if elapsed >= timeout:
                 return False
-            if self.threads:
+            # We update the number of active threads
+            selection = self.getActiveCommands(selection)
+            if selection:
                 time.sleep(resolution)
-        print("Terminated", self.threads)
-        return len(self.threads) == 0
 
     # --
     # ### Running, joining, terminating
@@ -267,32 +299,6 @@ def join(*commands: Command, timeout: Optional[int] = None):
 
 def terminate():
     return Runner.Get().terminate()
-
-
-def popen(command: List[str], out: Optional[BytesConsumer] = None, err: Optional[BytesConsumer] = None, end: Optional[Callable[[int], None]] = None) -> int:
-    """A low-level, streaming blocking reader that calls back `out` and `err` consumers
-    upon data."""
-    # SEE: https://github.com/python/cpython/blob/3.9/Lib/subprocess.py
-    assert command
-    process = Popen(command, stdout=PIPE, stderr=PIPE, bufsize=0)
-    channels = dict((_[0].fileno(), _)
-                    for _ in ((process.stdout, out), (process.stderr, err)))
-    # NOTE: We could simply return the process here and do the multiplexing
-    # in the select directly, but the intention is that the `run` command
-    # is run in a thread. We use the low-level POSIX APIs in order to
-    # do the minimum amount of buffering.
-    while waiting := [_ for _ in channels]:
-        for fd in select.select(waiting, [], [])[0]:
-            chunk = os.read(fd, 64_000)
-            if chunk:
-                if (handler := channels[fd][1]):
-                    handler(chunk)
-            else:
-                os.close(fd)
-                del channels[fd]
-    if end:
-        end(process.returncode or 0)
-    return process.returncode
 
 
 # FROM: https://stackoverflow.com/questions/14693701/how-can-i-remove-the-ansi-escape-sequences-from-a-string-in-python
