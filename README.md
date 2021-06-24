@@ -7,6 +7,20 @@
       \/                   |__|             \/      \/
 ```
 
+**Multiplex** is a command-line multiplexer along with a simple Python API
+to run multiple processes in parallel and stop them all at once, or based
+on some condition.
+
+Multiplex will gracefully shutdown child processes, and multiplex their output
+and error streams to stdout and stderr in a way that is easily parsable
+with regular command line tools.
+
+Here's how you'd benchmark Python's embedded HTTP server with a one-liner:
+
+```
+mutliplex "|silent=python -m http.server" "+1|end=ab -n1000 http://localhost:8000/"
+```
+
 # Installing
 
 Quick, from the shell:
