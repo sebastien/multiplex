@@ -9,7 +9,7 @@ import os
 import time
 
 # --
-# Multiplex Command Multiplex
+# # Multiplex
 #
 # The `multiplex` module implements a multiplexing command runner that allows
 # for running multiple, potentially long running commands, merge their output
