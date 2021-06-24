@@ -1,12 +1,14 @@
-from typing import List, Dict, Optional, Callable, Union, TypeVar, Generic, Tuple
+#!/usr/bin/env python
+from typing import List, Dict, Optional, Callable, Union, Tuple
 from subprocess import Popen, PIPE
 from threading import Thread
-from io import BytesIO
 import re
 import select
 import signal
 import os
+import sys
 import time
+import argparse
 
 # --
 # # Multiplex
@@ -18,6 +20,12 @@ import time
 
 # --
 # ## Types
+
+# FROM: https://stackoverflow.com/questions/14693701/how-can-i-remove-the-ansi-escape-sequences-from-a-string-in-python
+# 7-bit and 8-bit C1 ANSI sequences
+RE_ANSI_ESCAPE_8BIT = re.compile(
+    br'(?:\x1B[@-Z\\-_]|[\x80-\x9A\x9C-\x9F]|(?:\x1B\[|\x9B)[0-?]*[ -/]*[@-~])')
+RE_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 BytesConsumer = Callable[[bytes], None]
 StartCallback = Callable[['Command'], None]
@@ -165,12 +173,20 @@ class Runner:
     # ### Running, joining, terminating
     #
     # These are the key primitives that
-    def run(self, command: List[str]) -> Command:
-        key = str(len(self.commands))
+    def run(self, command: List[str], key: Optional[str] = None, delay: Optional[float] = None, actions: Optional[List[str]] = None) -> Command:
+        key = key or str(len(self.commands))
         cmd = Command(command, key)
         # We create a process
+        if delay:
+            time.sleep(delay)
         process = Popen(command, stdout=PIPE, stderr=PIPE, bufsize=0)
         cmd.pid = process.pid
+
+        def onEnd(data):
+            self.doEnd(cmd, data)
+            if "end" in (actions or ()):
+                # NOTE: This is called from the thread, so potentially problematic
+                self.terminate()
         # NOTE: We could have just one reader thread that selects, as opposed
         # to having multiple threads that read from each process.
         thread = Thread(
@@ -179,7 +195,7 @@ class Runner:
                 process,
                 lambda _: self.doOut(cmd, _),
                 lambda _: self.doErr(cmd, _),
-                lambda _: self.doEnd(cmd, _)))
+                onEnd))
         thread.start()
         self.commands[key] = (cmd, thread)
         self.doStart(cmd)
@@ -301,15 +317,6 @@ def terminate():
     return Runner.Get().terminate()
 
 
-# FROM: https://stackoverflow.com/questions/14693701/how-can-i-remove-the-ansi-escape-sequences-from-a-string-in-python
-# 7-bit and 8-bit C1 ANSI sequences
-RE_ANSI_ESCAPE_8BIT = re.compile(
-    br'(?:\x1B[@-Z\\-_]|[\x80-\x9A\x9C-\x9F]|(?:\x1B\[|\x9B)[0-?]*[ -/]*[@-~])'
-)
-
-RE_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-
-
 def strip_ansi_bytes(data: bytes) -> bytes:
     return RE_ANSI_ESCAPE_8BIT.sub(b'', data)
 
@@ -318,11 +325,55 @@ def strip_ansi(data: str) -> str:
     return RE_ANSI_ESCAPE.sub('', data)
 
 
+RE_LINE = re.compile(
+    r"^((?P<key>[\dA-Za-z_]+)?(\+(?P<delay>\d+(\.\d+)?))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$")
+
+
+def parse(line: str):
+    match = RE_LINE.match(line)
+    assert match
+    key = match.group("key")
+    delay = match.group("delay")
+    command = match.group("command")
+    actions = (match.group("action") or "").split("|")[1:]
+    return key, float(delay) if delay else None, actions, command.split()
+
+
+def cli(args=sys.argv[1:]):
+    """The command-line interface of this module."""
+    if type(args) not in (type([]), type(())):
+        args = [args]
+    oparser = argparse.ArgumentParser(
+        prog="multiplex",
+    )
+    # TODO: Rework command lines arguments, we want something that follows
+    # common usage patterns.
+    oparser.add_argument("commands", metavar="COMMANDS", type=str, nargs='+',
+                         help='The list of commands to run in parallell')
+    oparser.add_argument("-o", "--output",    type=str,  dest="output", default="-",
+                         help="Specifies an output file")
+    oparser.add_argument("-t", "--timeout",    type=int,  dest="timeout", default=0,
+                         help="Specifies a timeout until which the commands are terinated")
+    # We create the parse and register the options
+    args = oparser.parse_args(args=args)
+    out_path = args.output if args.output and args.output != "-" else None
+    out = open(out_path, "wt") if out_path else sys.stdout
+    runner = Runner()
+    for command in args.commands:
+        # FIXME: This is not correct, should take into consideration the \, etc.
+        key, delay, actions, cmd = parse(command)
+        print((key, delay, actions, cmd))
+        runner.run(cmd, key=key, delay=delay, actions=actions)
+    if args.timeout:
+        runner.join(timeout=args.timeout)
+        runner.terminate()
+        runner.join()
+    else:
+        runner.join()
+    if out_path:
+        out.close()
+
+
 if __name__ == "__main__":
-
-    Runner().run(["python", "-m", "http.server"]
-                 ).run(["date"]).join()
-    # run(["python", "-m", "http.server"])
-
-    # run(["dmesg"])
+    cli()
 # EOF

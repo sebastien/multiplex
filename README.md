@@ -7,9 +7,25 @@
       \/                   |__|             \/      \/
 ```
 
+# Installing
 
-
+Quick, from the shell:
 
 ```
-multirun "A=python -m http.server" "B=stunnel …"
+$ curl -o multiplex https://raw.githubusercontent.com/sebastien/multiplex/main/src/py/multiplex.py; chmod +x multiplex
+$ ./multiplex --help
+```
+
+alternatively, using `pip`:
+
+```
+$ python -m pip install --user multiple
+```
+# Usage
+
+## Commands
+
+```
+A=python -m http.server
+A+5=python -m http.server
 ```
