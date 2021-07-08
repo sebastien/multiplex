@@ -15,10 +15,14 @@ Multiplex will gracefully shutdown child processes, and multiplex their output
 and error streams to stdout and stderr in a way that is easily parsable
 with regular command line tools.
 
+Multiplex is useful when you need to run multiple programs all at once and
+combine their output. For instance, you need a webserver, a workqueue and a
+database to run standalone all together. You could write a shell script, or you could write a one liner using `multiplex`.
+
 Here's how you'd benchmark Python's embedded HTTP server with a one-liner:
 
 ```
-mutliplex "|silent=python -m http.server" "+1|end=ab -n1000 http://localhost:8000/"
+multiplex "|silent=python -m http.server" "+1|end=ab -n1000 http://localhost:8000/"
 ```
 
 # Installing
@@ -50,7 +54,7 @@ multiplex "+5=python -m http.server"
 ```
 Running a command after another
 ```
-mutliplex "A=python -m http.server" "+A=ab -n1000 http://localhost:8000/"
+multiplex "A=python -m http.server" "+A=ab -n1000 http://localhost:8000/"
 ```
 Commands follow a simple structure:
 
