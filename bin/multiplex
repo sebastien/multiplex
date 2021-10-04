@@ -1,2 +1,3 @@
 #!/usr/bin/env sh
-python -m multiplex $@
+python -m multiplex "$@"
+# EOF
