@@ -16,6 +16,11 @@ all: deps $(PRODUCT)
 
 deps: .deps/cells .deps/texto
 
+check:
+	bandit -sB101 $(SOURCES_PY)
+	pyflakes $(SOURCES_PY)
+
+
 clean: $(PRODUCT)
 	@for FILE in $(PRODUCT); do if [ -f "$$FILE" ]; then unlink "$$FILE"; fi; done
 

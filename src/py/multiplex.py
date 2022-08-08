@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from typing import Optional, Callable, Union, NamedTuple, cast
+from typing import Optional, Callable, Union, NamedTuple, Iterable
 from threading import Thread
 from pathlib import Path
 import re
@@ -25,34 +25,49 @@ import argparse
 # FROM: https://stackoverflow.com/questions/14693701/how-can-i-remove-the-ansi-escape-sequences-from-a-string-in-python
 # 7-bit and 8-bit C1 ANSI sequences
 RE_ANSI_ESCAPE_8BIT = re.compile(
-    br'(?:\x1B[@-Z\\-_]|[\x80-\x9A\x9C-\x9F]|(?:\x1B\[|\x9B)[0-?]*[ -/]*[@-~])')
-RE_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    rb"(?:\x1B[@-Z\\-_]|[\x80-\x9A\x9C-\x9F]|(?:\x1B\[|\x9B)[0-?]*[ -/]*[@-~])"
+)
+RE_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 BytesConsumer = Callable[[bytes], None]
-StartCallback = Callable[['Command'], None]
-OutCallback = Callable[['Command', bytes], None]
-ErrCallback = Callable[['Command', bytes], None]
-EndCallback = Callable[['Command', int], None]
-DataCallback = Callable[['Command', bytes], None]
+StartCallback = Callable[["Command"], None]
+OutCallback = Callable[["Command", bytes], None]
+ErrCallback = Callable[["Command", bytes], None]
+EndCallback = Callable[["Command", int], None]
+DataCallback = Callable[["Command", bytes], None]
 
 
-def SwallowStart(command: 'Command'): pass
-def SwallowOut(command: 'Command', data: bytes): pass
-def SwallowErr(command: 'Command', data: bytes): pass
-def SwallowEnd(command: 'Command', data: int): pass
+def SwallowStart(command: "Command"):
+    pass
+
+
+def SwallowOut(command: "Command", data: bytes):
+    pass
+
+
+def SwallowErr(command: "Command", data: bytes):
+    pass
+
+
+def SwallowEnd(command: "Command", data: int):
+    pass
 
 
 RE_PID = re.compile(r"(\d+)")
 
 
 def shell(command: list[str], input: Optional[bytes] = None) -> Optional[bytes]:
+    """Runs the given command as a subprocess, piping the input, stderr and out"""
     # FROM: https://stackoverflow.com/questions/163542/how-do-i-pass-a-string-into-subprocess-popen-using-the-stdin-argument#165662
-    res = subprocess.run(command,  stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, input=input)
+    res = subprocess.run(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, input=input
+    )
     return res.stdout if res.returncode == 0 else None
 
 
 class Proc:
+    """An abstraction over the `/proc` filesystem to collect
+    information on running processes."""
 
     @staticmethod
     def children(pid: int) -> set[int]:
@@ -91,6 +106,21 @@ class Proc:
     def killchild(cls, pid: int) -> bool:
         return cls.kill(pid)
 
+    @classmethod
+    def mem(cls, pid: int) -> tuple[str, str]:
+        mem = {
+            k.strip(): v.strip()
+            for k, v in (
+                _.split(":", 1)
+                for _ in Path(f"/proc/{pid}/status").read_text().split("\n")
+                if ":" in _
+            )
+        }
+        # SEE <https://kernelnewbies.kernelnewbies.narkive.com/PG3s6Ndp/ot-meaning-of-proc-pid-status-fields>
+        mem_max = mem["VmHWM"]
+        mem_all = mem["VmRSS"]
+        return mem_all, mem_max
+
 
 # def audit(event: str, data: tuple):
 #     print(f"Audit: {event} -> {data}")
@@ -114,19 +144,28 @@ class Command:
         self.onEnd: list[Optional[EndCallback]] = []
 
     # TODO: We may want to have a recursive subprocess listing
-    @ property
+    @property
     def children(self) -> set[int]:
         if self.pid:
             self._children = self._children.union(Proc.children(self.pid))
         return self._children
 
-    @ property
+    @property
     def ppid(self) -> Optional[int]:
         return Proc.parent(self.pid) if self.pid else None
 
-    @ property
+    @property
     def isRunning(self) -> bool:
-        return bool(next((_ for _ in self.children.union(set([self.pid]) if self.pid else set()) if _ and Proc.exists(_)), False))
+        return bool(
+            next(
+                (
+                    _
+                    for _ in self.children.union(set([self.pid]) if self.pid else set())
+                    if _ and Proc.exists(_)
+                ),
+                False,
+            )
+        )
 
     def silent(self):
         if not self.onStart:
@@ -138,6 +177,7 @@ class Command:
         if not self.onEnd:
             self.onEnd.append(SwallowEnd)
         return self
+
 
 # TODO: We could do a CommandRunner that is aprocess, but we would need
 # to capture the stdin, stdout, stderr.
@@ -154,11 +194,18 @@ class Formatter:
         "end": "=",
     }
 
-    def __init__(self, writer: Optional[Callable[[bytes], None]] = lambda data: None if os.write(1, data) else None):
+    def __init__(
+        self,
+        writer: Optional[Callable[[bytes], None]] = lambda data: None
+        if os.write(1, data)
+        else None,
+    ):
         self.writer = writer
 
     def start(self, command: Command):
-        return self.format("start", command.key, bytes(" ".join(str(_) for _ in command.args), "utf8"))
+        return self.format(
+            "start", command.key, bytes(" ".join(str(_) for _ in command.args), "utf8")
+        )
 
     def out(self, command: Command, data: bytes):
         return self.format("out", command.key, data, self.SEP)
@@ -171,8 +218,11 @@ class Formatter:
 
     def format(self, stream: str, key: str, data: Union[int, bytes], sep: str = SEP):
         prefix = bytes(f"{self.STREAMS[stream]}{sep}{key}{sep}", "utf8")
-        lines = [bytes(str(data), "utf8")] if not isinstance(
-            data, bytes) else data.split(b"\n")
+        lines = (
+            [bytes(str(data), "utf8")]
+            if not isinstance(data, bytes)
+            else data.split(b"\n")
+        )
         if isinstance(data, bytes) and data.endswith(b"\n"):
             lines = lines[:-1]
         if self.writer:
@@ -180,6 +230,7 @@ class Formatter:
                 self.writer(prefix)
                 self.writer(line)
                 self.writer(b"\n")
+
 
 # NOTE: This is kind of a stretch, but we want to really say "ThisClass"
 
@@ -193,12 +244,13 @@ class Formatter:
 
 class Runner:
 
-    SIGNALS = dict((_, getattr(signal, _).value)
-                   for _ in dir(signal) if _.startswith("SIG"))
-    Instance: Optional['Runner'] = None
+    SIGNALS = dict(
+        (_, getattr(signal, _).value) for _ in dir(signal) if _.startswith("SIG")
+    )
+    Instance: Optional["Runner"] = None
 
     @classmethod
-    def Get(cls) -> 'Runner':
+    def Get(cls) -> "Runner":
         if cls.Instance is None:
             cls.Instance = Runner()
         return cls.Instance
@@ -208,7 +260,9 @@ class Runner:
         self.formatter: Formatter = Formatter()
         self.registerSignals()
 
-    def getActiveCommands(self, commands: Optional[dict[str, tuple[Command, Thread]]]) -> dict[str, tuple[Command, Thread]]:
+    def getActiveCommands(
+        self, commands: Optional[dict[str, tuple[Command, Thread]]]
+    ) -> dict[str, tuple[Command, Thread]]:
         """Returns the subset of commands that are active."""
         commands = commands or self.commands
         return dict((k, v) for k, v in commands.items() if v[1].is_alive())
@@ -251,7 +305,13 @@ class Runner:
     # ### Running, joining, terminating
     #
     # These are the key primitives that
-    def run(self, command: list[str], key: Optional[str] = None, delay: Optional[float] = None, actions: Optional[list[str]] = None) -> Command:
+    def run(
+        self,
+        command: list[str],
+        key: Optional[str] = None,
+        delay: Optional[float] = None,
+        actions: Optional[list[str]] = None,
+    ) -> Command:
         key = key or str(len(self.commands))
         cmd = Command(command, key)
         if actions and "silent" in actions:
@@ -262,8 +322,13 @@ class Runner:
         # NOTE: If the start_new_session attribute is set to true, then
         # all the child processes will belong to the process group with the
         # pid of the command.
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   bufsize=0, start_new_session=True)
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            start_new_session=True,
+        )
         cmd.pid = process.pid
 
         def onEnd(data):
@@ -271,6 +336,7 @@ class Runner:
             if "end" in (actions or ()):
                 # NOTE: This is called from the thread, so potentially problematic
                 self.terminate()
+
         # NOTE: We could have just one reader thread that selects, as opposed
         # to having multiple threads that read from each process.
         thread = Thread(
@@ -279,18 +345,29 @@ class Runner:
                 process,
                 lambda _: self.doOut(cmd, _),
                 lambda _: self.doErr(cmd, _),
-                onEnd))
+                onEnd,
+            ),
+        )
         thread.start()
         self.commands[key] = (cmd, thread)
         self.doStart(cmd)
         return cmd
 
-    def reader_threaded(self, process: subprocess.Popen, out: Optional[BytesConsumer] = None, err: Optional[BytesConsumer] = None, end: Optional[Callable[[int], None]] = None):
+    def reader_threaded(
+        self,
+        process: subprocess.Popen,
+        out: Optional[BytesConsumer] = None,
+        err: Optional[BytesConsumer] = None,
+        end: Optional[Callable[[int], None]] = None,
+    ):
         """A low-level, streaming blocking reader that calls back `out` and `err` consumers
         upon data."""
         # SEE: https://github.com/python/cpython/blob/3.9/Lib/subprocess.py
-        channels = dict((_[0].fileno(), _)
-                        for _ in ((process.stdout, out), (process.stderr, err)) if _[0])
+        channels = dict(
+            (_[0].fileno(), _)
+            for _ in ((process.stdout, out), (process.stderr, err))
+            if _[0]
+        )
         # NOTE: We could simply return the process here and do the multiplexing
         # in the select directly, but the intention is that the `run` command
         # is run in a thread. We use the low-level POSIX APIs in order to
@@ -299,7 +376,7 @@ class Runner:
             for fd in select.select(waiting, [], [])[0]:
                 chunk = os.read(fd, 64_000)
                 if chunk:
-                    if (handler := channels[fd][1]):
+                    if handler := channels[fd][1]:
                         handler(chunk)
                 else:
                     os.close(fd)
@@ -310,14 +387,24 @@ class Runner:
     def join(self, *commands: Command, timeout: Optional[int] = None) -> list[Command]:
         """Joins all or the given list of commands, waiting indefinitely or up
         to the given `timeout` value."""
-        selection = dict((k, v) for k, v in self.commands.items(
-        ) if v[0] in commands) if commands else self.commands
+        selection = (
+            dict((k, v) for k, v in self.commands.items() if v[0] in commands)
+            if commands
+            else self.commands
+        )
         started = time.time()
         elapsed: float = 0.0
-        while (active := self.getActiveCommands(selection)) and (timeout is None or elapsed < timeout):
+        poll_timeout = 1.0
+        while (active := self.getActiveCommands(selection)) and (
+            timeout is None or elapsed < timeout
+        ):
             left = timeout - elapsed if timeout else None
-            t = (timeout/len(active)) if timeout else None
-            print(f"left:{left} t:{t} active:{active}")
+            t = (timeout / len(active)) if timeout else None
+            t = (
+                min(poll_timeout, poll_timeout if t is None else t)
+                if poll_timeout
+                else t
+            )
             for cmd, thread in active.values():
                 # Out of courtesy, we wait on the child PID, which is required
                 # for the child not be a zombie if it's terminated. I've seen
@@ -335,6 +422,8 @@ class Runner:
                         pass
                 # We join the thread reader, the thread will end once the channels
                 # are closed.
+                # TODO: Polling timeout
+                # print("TIMEOUT", t)
                 thread.join(timeout=t)
             elapsed = time.time() - started
         return [_[0] for _ in self.getActiveCommands(selection).values()]
@@ -343,8 +432,11 @@ class Runner:
         """Terminates given list of commands, waiting indefinitely or up
         to the given `timeout` value."""
         # We extract the commands the corresponding threads
-        selection = dict((k, v) for k, v in self.commands.items(
-        ) if v[0] in commands) if commands else self.commands
+        selection = (
+            dict((k, v) for k, v in self.commands.items() if v[0] in commands)
+            if commands
+            else self.commands
+        )
         # Now we iterate and kill, the command processes, the threads will die
         # off accordingly.
         started = time.time()
@@ -384,23 +476,24 @@ class Runner:
                 pass
 
     def onSignal(self, signum: int, frame):
-        signame = next(
-            (k for k, v in self.SIGNALS.items() if v == signum), None)
+        signame = next((k for k, v in self.SIGNALS.items() if v == signum), None)
         if signame == "SIGINT":
             self.terminate()
         elif signame == "SIGCHLD":
             pass
 
+
 # --
 # ##  API
 
 
-def run(*args: Union[str, int],
-        onStart: Optional[StartCallback] = None,
-        onOut: Optional[OutCallback] = None,
-        onErr: Optional[ErrCallback] = None,
-        onEnd: Optional[EndCallback] = None,
-        ) -> Command:
+def run(
+    *args: Union[str, int],
+    onStart: Optional[StartCallback] = None,
+    onOut: Optional[OutCallback] = None,
+    onErr: Optional[ErrCallback] = None,
+    onEnd: Optional[EndCallback] = None,
+) -> Command:
     command = Runner.Get().run([str(_) for _ in args])
     if onStart:
         command.onStart.append(onStart)
@@ -422,25 +515,54 @@ def terminate():
 
 
 def strip_ansi_bytes(data: bytes) -> bytes:
-    return RE_ANSI_ESCAPE_8BIT.sub(b'', data)
+    return RE_ANSI_ESCAPE_8BIT.sub(b"", data)
 
 
 def strip_ansi(data: str) -> str:
-    return RE_ANSI_ESCAPE.sub('', data)
+    return RE_ANSI_ESCAPE.sub("", data)
 
 
 RE_LINE = re.compile(
-    r"^((?P<key>[\dA-Za-z_]+)?(\+(?P<delay>\d+(\.\d+)?))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$")
+    r"^((?P<key>[\dA-Za-z_]+)?(\+(?P<delay>\d+(\.\d+)?))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
+)
 
 
 class ParsedCommand(NamedTuple):
+    """Data structure holding a parsed command."""
+
     key: str
     delay: Optional[float]
     actions: list[str]
     command: list[str]
 
 
+def splitargs(command: str) -> Iterable[str]:
+    """Splits the given command line into separate arguments, being mindful of
+    quotes."""
+    delimiter: str = " "
+    SPACE = " "
+    ESC = "\\"
+    o: int = 0
+    p: str = ""
+    n: int = len(command)
+    for i in range(n):
+        c = command[i]
+        if c == delimiter and p != ESC:
+            if o != i:
+                yield command[o:i]
+            if c != SPACE:
+                delimiter = " "
+            o = i + 1
+        elif delimiter == SPACE and c in "'\"":
+            delimiter = c
+            o = i + 1
+        p = c
+    if o != n:
+        yield command[o:]
+
+
 def parse(line: str) -> ParsedCommand:
+    """Parses a command line"""
     match = RE_LINE.match(line)
     # TODO: Should be a bit more sophisticated
     assert match
@@ -448,7 +570,9 @@ def parse(line: str) -> ParsedCommand:
     delay = match.group("delay")
     command = match.group("command")
     actions = (match.group("action") or "").split("|")[1:]
-    return ParsedCommand(key, float(delay) if delay else None, actions, command.split())
+    return ParsedCommand(
+        key, float(delay) if delay else None, actions, [_ for _ in splitargs(command)]
+    )
 
 
 def cli(args=sys.argv[1:]):
@@ -460,29 +584,63 @@ def cli(args=sys.argv[1:]):
     )
     # TODO: Rework command lines arguments, we want something that follows
     # common usage patterns.
-    oparser.add_argument("commands", metavar="COMMANDS", type=str, nargs='+',
-                         help='The list of commands to run in parallel')
-    oparser.add_argument("-o", "--output",    type=str,  dest="output", default="-",
-                         help="Specifies an output file")
-    oparser.add_argument("-t", "--timeout",    type=float,  dest="timeout", default=0,
-                         help="Specifies a timeout until which the commands are terminated")
+    oparser.add_argument(
+        "commands",
+        metavar="COMMANDS",
+        type=str,
+        nargs="+",
+        help="The list of commands to run in parallel",
+    )
+    oparser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        dest="output",
+        default="-",
+        help="Specifies an output file",
+    )
+    oparser.add_argument(
+        "-t",
+        "--timeout",
+        type=float,
+        dest="timeout",
+        default=0,
+        help="Specifies a timeout until which the commands are terminated",
+    )
+    oparser.add_argument(
+        "-p",
+        "--parse",
+        action="store_true",
+        default=False,
+        help="Outputs the parsed command",
+    )
+
     # We create the parse and register the options
     args = oparser.parse_args(args=args)
     out_path = args.output if args.output and args.output != "-" else None
     out = open(out_path, "wt") if out_path else sys.stdout
-    runner = Runner()
-    for command in args.commands:
-        # FIXME: This is not correct, should take into consideration the \, etc.
-        key, delay, actions, cmd = parse(command)
-        # FIXME: Delay is not correct, we should sort the commands by delay and
-        # do that here instead of from the runner.
-        runner.run(cmd, key=key, delay=delay, actions=actions)
-    if args.timeout:
-        runner.join(timeout=args.timeout)
-        runner.terminate()
-        runner.join()
+    if args.parse:
+        for command in args.commands:
+            key, delay, actions, cmd = parse(command)
+            out.write(f"Parsed: {command}\n")
+            out.write(f"- key: {key}\n")
+            out.write(f"- delay: {delay}\n")
+            out.write(f"- actions: {actions}\n")
+            out.write(f"- cmd: {cmd}\n")
     else:
-        runner.join()
+        runner = Runner()
+        for command in args.commands:
+            # FIXME: This is not correct, should take into consideration the \, etc.
+            key, delay, actions, cmd = parse(command)
+            # FIXME: Delay is not correct, we should sort the commands by delay and
+            # do that here instead of from the runner.
+            runner.run(cmd, key=key, delay=delay, actions=actions)
+        if args.timeout:
+            runner.join(timeout=args.timeout)
+            runner.terminate()
+            runner.join()
+        else:
+            runner.join()
     if out_path:
         out.close()
 
