@@ -1,9 +1,12 @@
-SHELL:=bash
+SHELL:= bash
 .SHELLFLAGS:= -eu -o pipefail -c
 MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
+PROJECT:=multiplex
+PYPI_PROJECT=multiplex
+VERSION:=$(shell grep VERSION setup.py  | head -n1 | cut -d '"' -f2)
 
-PYTHON=python3
+PYTHON=python
 PATH_SOURCES_PY=src/py
 PYTHON_MODULES=$(patsubst src/py/%,%,$(wildcard src/py/*))
 SOURCES_BIN:=$(wildcard bin/*)
@@ -13,11 +16,13 @@ MODULES_PY:=$(filter-out %/__main__,$(filter-out %/__init__,$(SOURCES_PY:$(PATH_
 PATH_LOCAL_PY=$(firstword $(shell python -c "import sys,pathlib;sys.stdout.write(' '.join([_ for _ in sys.path if _.startswith(str(pathlib.Path.home()))] ))"))
 PATH_LOCAL_BIN=$(HOME)/.local/bin
 
-REQUIRE_PY=flake8 bandit mypy
+REQUIRE_PY=flake8 bandit mypy twine
 PREP_ALL=$(REQUIRE_PY:%=build/require-py-%.task)
 # Commands
 BANDIT=$(PYTHON) -m bandit
 FLAKE8=$(PYTHON) -m flake8
+MYPY=$(PYTHON) -m mypy
+TWINE=$(PYTHON) -m twine
 MYPYC=mypyc
 
 cmd-check=if ! $$(which $1 &> /dev/null ); then echo "ERR Could not find command $1"; exit 1; fi; $1
@@ -34,10 +39,6 @@ run:
 ci: check test
 	@
 
-
-
-
-
 .PHONY: audit
 audit: check-bandit
 	@echo "=== $@"
@@ -47,10 +48,11 @@ audit: check-bandit
 compile:
 	@echo "=== $@"
 	echo "Compiling $(MODULES_PY): $(SOURCES_PY)"
+	# NOTE: Output is going to be like '$(PROJECT)/__init__.cpython-310-x86_64-linux-gnu.so'
 
 	mkdir -p "build"
 	$(foreach M,$(MODULES_PY),mkdir -p build/$M;)
-	env -C build MYPYPATH=$(realpath .)/src/py mypyc -p multiplex
+	env -C build MYPYPATH=$(realpath .)/src/py mypyc -p $(PROJECT)
 
 .PHONY: check
 check: check-bandit check-flakes check-strict
@@ -60,7 +62,7 @@ check: check-bandit check-flakes check-strict
 check-compiled:
 	@
 	echo "=== $@"
-	COMPILED=$$(PYTHONPATH=build python -c "import multiplex;print(multiplex)")
+	COMPILED=$$(PYTHONPATH=build python -c "import $(PROJECT);print($(PROJECT))")
 	echo "Extra compiled at: $$COMPILED"
 
 .PHONY: check-bandit
@@ -71,7 +73,7 @@ check-bandit: $(PREP_ALL)
 .PHONY: check-flakes
 check-flakes: $(PREP_ALL)
 	@echo "=== $@"
-	$(FLAKE8) --ignore=E1,E203,E302,E401,E501,E704,E741,E266,F821,W  $(SOURCES_PY)
+	$(FLAKE8) --ignore=E1,E203,E231,E302,E401,E501,E704,E741,E266,F821,W  $(SOURCES_PY)
 
 .PHONY: check-mypyc
 check-mypyc: $(PREP_ALL)
@@ -102,16 +104,26 @@ check-strict: $(PREP_ALL)
 		echo "EOS OK $$summary"
 	fi
 
-
-
-
 .PHONY: lint
 lint: check-flakes
 	@
 
 .PHONY: format
 format:
-	@black $(SOURCES_PY)
+	@ruff $(SOURCES_PY)
+
+.PHONY: release-prep
+release-prep: $(PREP_ALL)
+	@
+	# git commit -a -m "[Release] $(PROJECT): $(VERSION)"; true
+	# git tag $(VERSION); true
+	# git push --all; true
+
+.PHONY: release
+release: $(PREP_ALL)
+	@
+	$(PYTHON) setup.py clean sdist bdist_wheel
+	$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
 
 .PHONY: install
 install:
@@ -161,5 +173,5 @@ print-%:
 	$(info $*=$($*))
 
 .ONESHELL:
+
 # EOF
-#

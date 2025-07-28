@@ -94,7 +94,7 @@ class Proc:
 			result = shell(["ps", "-o", "ppid=", "-p", str(pid)])
 			if result:
 				try:
-					return int(result.decode('utf-8').strip())
+					return int(result.decode("utf-8").strip())
 				except ValueError:
 					pass
 			return None
@@ -124,7 +124,7 @@ class Proc:
 				return True
 			else:
 				return False
-		except OSError as e:
+		except OSError:
 			return False
 
 	@classmethod
@@ -155,13 +155,15 @@ class Proc:
 			result = shell(["ps", "-o", "rss,vsz", "-p", str(pid)])
 			if result:
 				try:
-					lines = result.decode('utf-8').strip().split('\n')
+					lines = result.decode("utf-8").strip().split("\n")
 					if len(lines) >= 2:  # Header + data line
 						values = lines[1].split()
 						if len(values) >= 2:
 							# ps outputs memory in KB on macOS
 							rss_kb = values[0] + " kB"  # Current RSS memory
-							vsz_kb = values[1] + " kB"  # Virtual memory size (approximation for peak)
+							vsz_kb = (
+								values[1] + " kB"
+							)  # Virtual memory size (approximation for peak)
 							return rss_kb, vsz_kb
 				except (ValueError, IndexError):
 					pass
@@ -177,7 +179,6 @@ class Proc:
 
 class Command:
 	"""Represents a system command"""
-
 
 	def __init__(self, args: list[str], key: str, pid: int | None = None) -> None:
 		self.key: str = key
@@ -290,7 +291,6 @@ class Formatter:
 
 
 class Runner:
-
 	SIGNALS = dict(
 		(_, getattr(signal, _).value) for _ in dir(signal) if _.startswith("SIG")
 	)
@@ -374,7 +374,7 @@ class Runner:
 		cmd = Command(command, key)
 		if actions and "silent" in actions:
 			cmd.silent()
-		
+
 		# Handle delays
 		if delay is not None:
 			if isinstance(delay, (int, float)):
@@ -383,7 +383,7 @@ class Runner:
 			elif isinstance(delay, str):
 				# Named delay: wait for named process to complete
 				self._wait_for_process(delay)
-		
+
 		# NOTE: If the start_new_session attribute is set to true, then
 		# all the child processes will belong to the process group with the
 		# pid of the command.
@@ -420,7 +420,7 @@ class Runner:
 
 	def reader_threaded(
 		self,
-		process: subprocess.Popen,
+		process: subprocess.Popen[bytes],
 		out: BytesConsumer | None = None,
 		err: BytesConsumer | None = None,
 		end: Callable[[int], None] | None = None,
@@ -464,7 +464,7 @@ class Runner:
 		while (active := self.getActiveCommands(selection)) and (
 			timeout is None or elapsed < timeout
 		):
-			left = timeout - elapsed if timeout else None
+			# left = timeout - elapsed if timeout else None
 			t = (timeout / len(active)) if timeout else None
 			t = (
 				min(poll_timeout, poll_timeout if t is None else t)
@@ -494,7 +494,9 @@ class Runner:
 			elapsed = time.time() - started
 		return [_[0] for _ in self.getActiveCommands(selection).values()]
 
-	def terminate(self, *commands: Command, resolution: float = 0.1, timeout: int = 5) -> bool:
+	def terminate(
+		self, *commands: Command, resolution: float = 0.1, timeout: int = 5
+	) -> bool:
 		"""Terminates given list of commands, waiting indefinitely or up
 		to the given `timeout` value."""
 		# We extract the commands the corresponding threads
@@ -533,7 +535,7 @@ class Runner:
 
 	def registerSignals(self) -> None:
 		# Only register for the signals we actually want to handle
-		signals_to_handle = ['SIGINT', 'SIGTERM']
+		signals_to_handle = ["SIGINT", "SIGTERM"]
 		for signame in signals_to_handle:
 			if hasattr(signal, signame):
 				try:
@@ -543,7 +545,7 @@ class Runner:
 					# Signal not available on this platform
 					pass
 
-	def onSignal(self, signum: int, frame) -> None:
+	def onSignal(self, signum: int, frame: object) -> None:
 		signame = next((k for k, v in self.SIGNALS.items() if v == signum), None)
 		if signame in ("SIGINT", "SIGTERM"):
 			print(f"\nReceived {signame}, terminating processes...")
@@ -644,25 +646,25 @@ def parse(line: str) -> ParsedCommand:
 	delay_str = match.group("delay")
 	command = match.group("command")
 	actions = (match.group("action") or "").split("|")[1:]
-	
+
 	# Parse delay: can be numeric (float) or named (string)
-	delay = None
+	delay: float | str | None = None
 	if delay_str:
 		try:
 			delay = float(delay_str)
 		except ValueError:
 			# It's a named delay (like "A")
 			delay = delay_str
-	
-	return ParsedCommand(
-		key, delay, actions, [_ for _ in splitargs(command)]
-	)
+
+	return ParsedCommand(key, delay, actions, [_ for _ in splitargs(command)])
 
 
-def cli(args=sys.argv[1:]) -> None:
+def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 	"""The command-line interface of this module."""
-	if type(args) not in (type([]), type(())):
-		args = [args]
+	if isinstance(argv, str):
+		argv = [argv]
+	elif not isinstance(argv, (list, tuple)):
+		argv = [str(argv)]
 	oparser = argparse.ArgumentParser(
 		prog="multiplex",
 	)
@@ -700,7 +702,7 @@ def cli(args=sys.argv[1:]) -> None:
 	)
 
 	# We create the parse and register the options
-	args = oparser.parse_args(args=args)
+	args = oparser.parse_args(args=argv)
 	out_path = args.output if args.output and args.output != "-" else None
 	out = open(out_path, "wt") if out_path else sys.stdout
 	if args.parse:
