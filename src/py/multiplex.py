@@ -356,20 +356,34 @@ class Runner:
 	# ### Running, joining, terminating
 	#
 	# These are the key primitives that
+	def _wait_for_process(self, process_key: str) -> None:
+		"""Wait for a named process to complete before continuing"""
+		if process_key in self.commands:
+			cmd, thread = self.commands[process_key]
+			# Wait for the thread to complete (which means the process has ended)
+			thread.join()
+
 	def run(
 		self,
 		command: list[str],
 		key: str | None = None,
-		delay: float | None = None,
+		delay: float | str | None = None,
 		actions: list[str] | None = None,
 	) -> Command:
 		key = key or str(len(self.commands))
 		cmd = Command(command, key)
 		if actions and "silent" in actions:
 			cmd.silent()
-		# We create a process
-		if delay:
-			time.sleep(delay)
+		
+		# Handle delays
+		if delay is not None:
+			if isinstance(delay, (int, float)):
+				# Numeric delay: wait specified seconds
+				time.sleep(delay)
+			elif isinstance(delay, str):
+				# Named delay: wait for named process to complete
+				self._wait_for_process(delay)
+		
 		# NOTE: If the start_new_session attribute is set to true, then
 		# all the child processes will belong to the process group with the
 		# pid of the command.
@@ -518,20 +532,26 @@ class Runner:
 	# These are the key primitives that
 
 	def registerSignals(self) -> None:
-		for name, sig in self.SIGNALS.items():
-			try:
-				signal.signal(sig, self.onSignal)
-			except OSError:
-				# Maybe a Err
-				pass
-			except ValueError:
-				# Signal not available there
-				pass
+		# Only register for the signals we actually want to handle
+		signals_to_handle = ['SIGINT', 'SIGTERM']
+		for signame in signals_to_handle:
+			if hasattr(signal, signame):
+				try:
+					sig = getattr(signal, signame)
+					signal.signal(sig, self.onSignal)
+				except (OSError, ValueError):
+					# Signal not available on this platform
+					pass
 
 	def onSignal(self, signum: int, frame) -> None:
 		signame = next((k for k, v in self.SIGNALS.items() if v == signum), None)
-		if signame == "SIGINT":
+		if signame in ("SIGINT", "SIGTERM"):
+			print(f"\nReceived {signame}, terminating processes...")
 			self.terminate()
+			# Wait for processes to actually terminate
+			self.join(timeout=2)
+			# Exit gracefully after termination
+			sys.exit(0)
 		elif signame == "SIGCHLD":
 			pass
 
@@ -575,8 +595,8 @@ def strip_ansi(data: str) -> str:
 	return RE_ANSI_ESCAPE.sub("", data)
 
 
-RE_LINE:re.Pattern[str] = re.compile(
-	r"^((?P<key>[\dA-Za-z_]+)?(\+(?P<delay>\d+(\.\d+)?))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
+RE_LINE = re.compile(
+	r"^((?P<key>[\dA-Za-z_]+)?(\+(?P<delay>\d+(\.\d+)?|[A-Za-z_][\dA-Za-z_]*))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
 )
 
 
@@ -584,7 +604,7 @@ class ParsedCommand(NamedTuple):
 	"""Data structure holding a parsed command."""
 
 	key: str
-	delay: float | None
+	delay: float | str | None  # Can be numeric delay or named reference
 	actions: list[str]
 	command: list[str]
 
@@ -621,11 +641,21 @@ def parse(line: str) -> ParsedCommand:
 	if not match:
 		raise SyntaxError(f"Could not parse command: {line}")
 	key = match.group("key")
-	delay = match.group("delay")
+	delay_str = match.group("delay")
 	command = match.group("command")
 	actions = (match.group("action") or "").split("|")[1:]
+	
+	# Parse delay: can be numeric (float) or named (string)
+	delay = None
+	if delay_str:
+		try:
+			delay = float(delay_str)
+		except ValueError:
+			# It's a named delay (like "A")
+			delay = delay_str
+	
 	return ParsedCommand(
-		key, float(delay) if delay else None, actions, [_ for _ in splitargs(command)]
+		key, delay, actions, [_ for _ in splitargs(command)]
 	)
 
 

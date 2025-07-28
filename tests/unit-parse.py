@@ -100,10 +100,9 @@ def test_sequential_example():
     assert result == expected, f"Expected {expected}, got {result}"
     
     result = parse("+A=ab -n1000 http://localhost:8000/")
-    expected = ParsedCommand(None, None, [], ["+A=ab", "-n1000", "http://localhost:8000/"])
-    # Note: This is actually parsing "+A=ab" as the first argument, which might not be intended
-    # but matches the current regex pattern
-    print("✓ Sequential example parsing (note: +A delay not fully supported)")
+    expected = ParsedCommand(None, "A", [], ["ab", "-n1000", "http://localhost:8000/"])
+    assert result == expected, f"Expected {expected}, got {result}"
+    print("✓ Sequential example with named delay parsing")
 
 def test_command_with_paths():
     """Test parsing commands with file paths"""
