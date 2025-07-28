@@ -36,7 +36,7 @@ def parse_cpu(source: Command, data: bytes):
         print(f"CPU:{cpu} MEM:{mem}")
 
 
-server = run("python", "-m", "http.server", onErr=parse_request)
+server = run("python3", "-m", "http.server", onErr=parse_request)
 cpu = run("top", "-p", server.pid, onOut=parse_cpu)
 time.sleep(2)
 tester = run("ab", f"-n{expected_requests}", "http://localhost:8000/").silent()

@@ -14,32 +14,32 @@ PID = None
 
 
 def run():
-    global PID
-    process = Popen(["watch", "-n1", "date"],
-                    stdout=PIPE, stderr=PIPE, bufsize=0)
-    PID = process.pid
-    channels = [process.stdout.fileno()]
-    while True:
-        try:
-            for fd in select.select(channels, [], [])[0]:
-                chunk = os.read(fd, 64_000)
-                if chunk:
-                    pass
-                else:
-                    os.close(fd)
-                    break
-        except OSError:
-            break
+	global PID
+	process = Popen(["watch", "-n1", "date"],
+					stdout=PIPE, stderr=PIPE, bufsize=0)
+	PID = process.pid
+	channels = [process.stdout.fileno()]
+	while True:
+		try:
+			for fd in select.select(channels, [], [])[0]:
+				chunk = os.read(fd, 64_000)
+				if chunk:
+					pass
+				else:
+					os.close(fd)
+					break
+		except OSError:
+			break
 
 
 def check_pid(pid: Optional[int]):
-    if pid == None:
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+	if pid == None:
+		return False
+	try:
+		os.kill(pid, 0)
+	except OSError:
+		return False
+	return True
 
 
 thread = Thread(target=run, args=())

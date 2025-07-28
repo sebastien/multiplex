@@ -7,9 +7,9 @@ count = 0
 
 
 def on_date(command, data):
-    global count
-    print(f"Iteration {count}")
-    count += 1
+	global count
+	print(f"Iteration {count}")
+	count += 1
 
 
 run("watch", "-n1", "date", onOut=on_date)

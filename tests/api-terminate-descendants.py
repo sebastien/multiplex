@@ -14,11 +14,11 @@ print(f"   pid: {process.pid}")
 print(f"   children: {process.children}")
 all_pids = set([process.pid]).union(process.children)
 for pid in all_pids:
-    print(f"-- TEST pid active: {pid}")
-    print(".. OK" if Proc.exists(pid) else "!! FAIL")
+	print(f"-- TEST pid active: {pid}")
+	print(".. OK" if Proc.exists(pid) else "!! FAIL")
 terminate()
 for pid in all_pids:
-    print(f"-- TEST pid terminated: {pid}")
-    print("!! FAIL" if Proc.exists(pid) else ".. OK")
+	print(f"-- TEST pid terminated: {pid}")
+	print("!! FAIL" if Proc.exists(pid) else ".. OK")
 print("DONE")
 # EOF
