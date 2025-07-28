@@ -1,15 +1,17 @@
-#!/usr/bin/env python
-from typing import Optional, Callable, Union, NamedTuple, Iterable
-from threading import Thread
+#!/usr/bin/env python3.13
+from __future__ import annotations
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from threading import Thread
+from typing import NamedTuple, ClassVar
+import argparse
+import os
 import re
-import subprocess
 import select
 import signal
-import os
+import subprocess
 import sys
 import time
-import argparse
 
 # --
 # # Multiplex
@@ -29,27 +31,27 @@ RE_ANSI_ESCAPE_8BIT = re.compile(
 )
 RE_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
-BytesConsumer = Callable[[bytes], None]
-StartCallback = Callable[["Command"], None]
-OutCallback = Callable[["Command", bytes], None]
-ErrCallback = Callable[["Command", bytes], None]
-EndCallback = Callable[["Command", int], None]
-DataCallback = Callable[["Command", bytes], None]
+type BytesConsumer = Callable[[bytes], None]
+type StartCallback = Callable[[Command], None]
+type OutCallback = Callable[[Command, bytes], None]
+type ErrCallback = Callable[[Command, bytes], None]
+type EndCallback = Callable[[Command, int], None]
+type DataCallback = Callable[[Command, bytes], None]
 
 
-def SwallowStart(command: "Command"):
+def SwallowStart(command: Command) -> None:
 	pass
 
 
-def SwallowOut(command: "Command", data: bytes):
+def SwallowOut(command: Command, data: bytes) -> None:
 	pass
 
 
-def SwallowErr(command: "Command", data: bytes):
+def SwallowErr(command: Command, data: bytes) -> None:
 	pass
 
 
-def SwallowEnd(command: "Command", data: int):
+def SwallowEnd(command: Command, data: int) -> None:
 	pass
 
 
@@ -59,7 +61,7 @@ RE_PID = re.compile(r"(\d+)")
 _HAS_PROC = Path("/proc").exists()
 
 
-def shell(command: list[str], input: Optional[bytes] = None) -> Optional[bytes]:
+def shell(command: list[str], input: bytes | None = None) -> bytes | None:
 	"""Runs the given command as a subprocess, piping the input, stderr and out"""
 	# FROM: https://stackoverflow.com/questions/163542/how-do-i-pass-a-string-into-subprocess-popen-using-the-stdin-argument#165662
 	res = subprocess.run(
@@ -82,7 +84,7 @@ class Proc:
 		return res
 
 	@staticmethod
-	def parent(pid: int) -> Optional[int]:
+	def parent(pid: int) -> int | None:
 		if _HAS_PROC:
 			# Linux implementation using /proc
 			path = Path(f"/proc/{pid}/stat")
@@ -176,16 +178,17 @@ class Proc:
 class Command:
 	"""Represents a system command"""
 
-	def __init__(self, args: list[str], key: str, pid: Optional[int] = None):
-		self.key = key
-		self.args = args
-		self.pid = pid
+
+	def __init__(self, args: list[str], key: str, pid: int | None = None) -> None:
+		self.key: str = key
+		self.args: list[str] = args
+		self.pid: int | None = pid
 		self._children: set[int] = set()
 		# Callbacks
-		self.onStart: list[Optional[StartCallback]] = []
-		self.onOut: list[Optional[OutCallback]] = []
-		self.onErr: list[Optional[ErrCallback]] = []
-		self.onEnd: list[Optional[EndCallback]] = []
+		self.onStart: list[StartCallback | None] = []
+		self.onOut: list[OutCallback | None] = []
+		self.onErr: list[ErrCallback | None] = []
+		self.onEnd: list[EndCallback | None] = []
 
 	# TODO: We may want to have a recursive subprocess listing
 	@property
@@ -195,7 +198,7 @@ class Command:
 		return self._children
 
 	@property
-	def ppid(self) -> Optional[int]:
+	def ppid(self) -> int | None:
 		return Proc.parent(self.pid) if self.pid else None
 
 	@property
@@ -211,7 +214,7 @@ class Command:
 			)
 		)
 
-	def silent(self):
+	def silent(self) -> Command:
 		if not self.onStart:
 			self.onStart.append(SwallowStart)
 		if not self.onOut:
@@ -240,27 +243,27 @@ class Formatter:
 
 	def __init__(
 		self,
-		writer: Optional[Callable[[bytes], None]] = lambda data: None
+		writer: Callable[[bytes], None] | None = lambda data: None
 		if os.write(1, data)
 		else None,
-	):
+	) -> None:
 		self.writer = writer
 
-	def start(self, command: Command):
+	def start(self, command: Command) -> None:
 		return self.format(
 			"start", command.key, bytes(" ".join(str(_) for _ in command.args), "utf8")
 		)
 
-	def out(self, command: Command, data: bytes):
+	def out(self, command: Command, data: bytes) -> None:
 		return self.format("out", command.key, data, self.SEP)
 
-	def err(self, command: Command, data: bytes):
+	def err(self, command: Command, data: bytes) -> None:
 		return self.format("err", command.key, data, self.SEP)
 
-	def end(self, command: Command, data: int):
+	def end(self, command: Command, data: int) -> None:
 		return self.format("end", command.key, data, self.SEP)
 
-	def format(self, stream: str, key: str, data: Union[int, bytes], sep: str = SEP):
+	def format(self, stream: str, key: str, data: int | bytes, sep: str = SEP) -> None:
 		prefix = bytes(f"{self.STREAMS[stream]}{sep}{key}{sep}", "utf8")
 		lines = (
 			[bytes(str(data), "utf8")]
@@ -291,21 +294,21 @@ class Runner:
 	SIGNALS = dict(
 		(_, getattr(signal, _).value) for _ in dir(signal) if _.startswith("SIG")
 	)
-	Instance: Optional["Runner"] = None
+	Instance: ClassVar[Runner | None] = None
 
 	@classmethod
-	def Get(cls) -> "Runner":
+	def Get(cls) -> Runner:
 		if cls.Instance is None:
 			cls.Instance = Runner()
 		return cls.Instance
 
-	def __init__(self):
+	def __init__(self) -> None:
 		self.commands: dict[str, tuple[Command, Thread]] = {}
 		self.formatter: Formatter = Formatter()
 		self.registerSignals()
 
 	def getActiveCommands(
-		self, commands: Optional[dict[str, tuple[Command, Thread]]]
+		self, commands: dict[str, tuple[Command, Thread]] | None
 	) -> dict[str, tuple[Command, Thread]]:
 		"""Returns the subset of commands that are active."""
 		commands = commands or self.commands
@@ -317,33 +320,37 @@ class Runner:
 	# This dispatches the events to the `formatter` first, and then to
 	# the command's internal event handlers.
 
-	def doStart(self, command: Command):
+	def doStart(self, command: Command) -> None:
 		if not command.onStart:
 			self.formatter.start(command)
 		else:
 			for _ in command.onStart:
-				_ and _(command)
+				if _:
+					_(command)
 
-	def doOut(self, command: Command, data: bytes):
+	def doOut(self, command: Command, data: bytes) -> None:
 		if not command.onOut:
 			self.formatter.out(command, data)
 		else:
 			for _ in command.onOut:
-				_ and _(command, data)
+				if _:
+					_(command, data)
 
-	def doErr(self, command: Command, data: bytes):
+	def doErr(self, command: Command, data: bytes) -> None:
 		if not command.onErr:
 			self.formatter.err(command, data)
 		else:
 			for _ in command.onErr:
-				_ and _(command, data)
+				if _:
+					_(command, data)
 
-	def doEnd(self, command: Command, data: int):
+	def doEnd(self, command: Command, data: int) -> None:
 		if not command.onEnd:
 			self.formatter.end(command, data)
 		else:
 			for _ in command.onEnd:
-				_ and _(command, data)
+				if _:
+					_(command, data)
 
 	# --
 	# ### Running, joining, terminating
@@ -352,9 +359,9 @@ class Runner:
 	def run(
 		self,
 		command: list[str],
-		key: Optional[str] = None,
-		delay: Optional[float] = None,
-		actions: Optional[list[str]] = None,
+		key: str | None = None,
+		delay: float | None = None,
+		actions: list[str] | None = None,
 	) -> Command:
 		key = key or str(len(self.commands))
 		cmd = Command(command, key)
@@ -375,7 +382,7 @@ class Runner:
 		)
 		cmd.pid = process.pid
 
-		def onEnd(data):
+		def onEnd(data: int) -> None:
 			self.doEnd(cmd, data)
 			if "end" in (actions or ()):
 				# NOTE: This is called from the thread, so potentially problematic
@@ -387,8 +394,8 @@ class Runner:
 			target=self.reader_threaded,
 			args=(
 				process,
-				lambda _: self.doOut(cmd, _),
-				lambda _: self.doErr(cmd, _),
+				lambda data: self.doOut(cmd, data),
+				lambda data: self.doErr(cmd, data),
 				onEnd,
 			),
 		)
@@ -400,10 +407,10 @@ class Runner:
 	def reader_threaded(
 		self,
 		process: subprocess.Popen,
-		out: Optional[BytesConsumer] = None,
-		err: Optional[BytesConsumer] = None,
-		end: Optional[Callable[[int], None]] = None,
-	):
+		out: BytesConsumer | None = None,
+		err: BytesConsumer | None = None,
+		end: Callable[[int], None] | None = None,
+	) -> None:
 		"""A low-level, streaming blocking reader that calls back `out` and `err` consumers
 		upon data."""
 		# SEE: https://github.com/python/cpython/blob/3.9/Lib/subprocess.py
@@ -416,7 +423,7 @@ class Runner:
 		# in the select directly, but the intention is that the `run` command
 		# is run in a thread. We use the low-level POSIX APIs in order to
 		# do the minimum amount of buffering.
-		while waiting := [_ for _ in channels]:
+		while waiting := [fd for fd in channels]:
 			for fd in select.select(waiting, [], [])[0]:
 				chunk = os.read(fd, 64_000)
 				if chunk:
@@ -429,7 +436,7 @@ class Runner:
 		if end:
 			end(process.returncode or 0)
 
-	def join(self, *commands: Command, timeout: Optional[int] = None) -> list[Command]:
+	def join(self, *commands: Command, timeout: int | None = None) -> list[Command]:
 		"""Joins all or the given list of commands, waiting indefinitely or up
 		to the given `timeout` value."""
 		selection = (
@@ -473,7 +480,7 @@ class Runner:
 			elapsed = time.time() - started
 		return [_[0] for _ in self.getActiveCommands(selection).values()]
 
-	def terminate(self, *commands: Command, resolution=0.1, timeout=5) -> bool:
+	def terminate(self, *commands: Command, resolution: float = 0.1, timeout: int = 5) -> bool:
 		"""Terminates given list of commands, waiting indefinitely or up
 		to the given `timeout` value."""
 		# We extract the commands the corresponding threads
@@ -503,13 +510,14 @@ class Runner:
 			selection = self.getActiveCommands(selection)
 			if selection:
 				time.sleep(resolution)
+		return True
 
 	# --
 	# ### Running, joining, terminating
 	#
 	# These are the key primitives that
 
-	def registerSignals(self):
+	def registerSignals(self) -> None:
 		for name, sig in self.SIGNALS.items():
 			try:
 				signal.signal(sig, self.onSignal)
@@ -520,7 +528,7 @@ class Runner:
 				# Signal not available there
 				pass
 
-	def onSignal(self, signum: int, frame):
+	def onSignal(self, signum: int, frame) -> None:
 		signame = next((k for k, v in self.SIGNALS.items() if v == signum), None)
 		if signame == "SIGINT":
 			self.terminate()
@@ -533,11 +541,11 @@ class Runner:
 
 
 def run(
-	*args: Union[str, int],
-	onStart: Optional[StartCallback] = None,
-	onOut: Optional[OutCallback] = None,
-	onErr: Optional[ErrCallback] = None,
-	onEnd: Optional[EndCallback] = None,
+	*args: str | int,
+	onStart: StartCallback | None = None,
+	onOut: OutCallback | None = None,
+	onErr: ErrCallback | None = None,
+	onEnd: EndCallback | None = None,
 ) -> Command:
 	command = Runner.Get().run([str(_) for _ in args])
 	if onStart:
@@ -551,11 +559,11 @@ def run(
 	return command
 
 
-def join(*commands: Command, timeout: Optional[int] = None):
+def join(*commands: Command, timeout: int | None = None) -> list[Command]:
 	return Runner.Get().join(*commands, timeout=timeout)
 
 
-def terminate():
+def terminate() -> bool:
 	return Runner.Get().terminate()
 
 
@@ -567,7 +575,7 @@ def strip_ansi(data: str) -> str:
 	return RE_ANSI_ESCAPE.sub("", data)
 
 
-RE_LINE = re.compile(
+RE_LINE:re.Pattern[str] = re.compile(
 	r"^((?P<key>[\dA-Za-z_]+)?(\+(?P<delay>\d+(\.\d+)?))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
 )
 
@@ -576,7 +584,7 @@ class ParsedCommand(NamedTuple):
 	"""Data structure holding a parsed command."""
 
 	key: str
-	delay: Optional[float]
+	delay: float | None
 	actions: list[str]
 	command: list[str]
 
@@ -610,7 +618,8 @@ def parse(line: str) -> ParsedCommand:
 	"""Parses a command line"""
 	match = RE_LINE.match(line)
 	# TODO: Should be a bit more sophisticated
-	assert match
+	if not match:
+		raise SyntaxError(f"Could not parse command: {line}")
 	key = match.group("key")
 	delay = match.group("delay")
 	command = match.group("command")
@@ -620,7 +629,7 @@ def parse(line: str) -> ParsedCommand:
 	)
 
 
-def cli(args=sys.argv[1:]):
+def cli(args=sys.argv[1:]) -> None:
 	"""The command-line interface of this module."""
 	if type(args) not in (type([]), type(())):
 		args = [args]
