@@ -3,7 +3,7 @@ SHELL:= bash
 MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
 PROJECT:=multiplex
-PYPI_PROJECT=multiplex
+PYPI_PROJECT=multiplex-sh
 VERSION:=$(shell grep VERSION setup.py  | head -n1 | cut -d '"' -f2)
 
 PYTHON=python

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys
 from setuptools import setup
 from pathlib import Path
 
@@ -66,7 +67,7 @@ KEYWORDS = [
 ]
 
 setup(
-	name="multiplex",
+	name="multiplex-sh",
 	version=VERSION,
 	description="A command-line multiplexer for running multiple processes in parallel with coordination",
 	long_description=long_description,

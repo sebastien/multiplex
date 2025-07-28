@@ -27,14 +27,24 @@ one-liner:
 
 # Installing
 
+Multiplex is available on PyPI at https://pypi.org/project/multiplex-sh
+
+## Using uv (recommended)
+
+    $ uv tool install multiplex-sh
+    $ multiplex --help
+
+## Using pip
+
+    $ pip install multiplex-sh
+    $ multiplex --help
+
+## Direct download
+
 Quick, from the shell:
 
     $ curl -o multiplex https://raw.githubusercontent.com/sebastien/multiplex/main/src/py/multiplex.py; chmod +x multiplex
     $ ./multiplex --help
-
-alternatively, using `pip`:
-
-    $ python -m pip install --user multiple
 
 # Usage
 
