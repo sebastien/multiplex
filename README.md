@@ -70,7 +70,7 @@ Running multiple commands with complex coordination:
 
 ## Command Syntax
 
-Commands follow a structured format: `[KEY][+DELAY][|ACTIONS]=COMMAND`
+Commands follow a structured format: `[KEY][#COLOR][+DELAY][|ACTIONS]=COMMAND`
 
 ### Naming (`KEY=`)
 - **Purpose**: Assign a name to a process for reference by other commands
@@ -79,6 +79,16 @@ Commands follow a structured format: `[KEY][+DELAY][|ACTIONS]=COMMAND`
   - `A=python -m http.server`
   - `DB=mongod --port 27017`
   - `API_SERVER=node app.js`
+
+### Colors (`#COLOR`)
+- **Purpose**: Style channel names with colors in output
+- **Named colors**: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `bright_red`, `bright_green`, etc.
+- **Hex colors**: 6-digit hex codes like `FF0000` (red), `00FF00` (green), `0000FF` (blue)
+- **Examples**:
+  - `server#red=python -m http.server`
+  - `db#blue=mongod --port 27017`
+  - `worker#00FF00=python worker.py`
+  - `logs#FFA500=tail -f app.log`
 
 ### Delays (`+DELAY`)
 Commands can be delayed in two ways:
@@ -169,11 +179,17 @@ Demonstrates chaining processes where each waits for the previous to complete.
 
 ## Real-world Scenarios
 
-**Development Environment (`examples/dev-environment.sh`)**
+**Development environment with colors:**
 ```bash
-multiplex "DB=mongod" "API+2=node server.js" "UI+2=npm run ui" "+5=open browser"
+multiplex "DB#blue=mongod" "API#green+2=node server.js" "UI#cyan+2=npm run ui" "logs#FFA500+5=tail -f app.log"
 ```
-Simulates starting a full development stack with proper coordination.
+Shows how to use colors to visually distinguish different services in a development stack.
+
+**Color Demo (`examples/color-demo.sh`)**
+```bash
+multiplex "server#red=python -m http.server" "worker#00FF00=python worker.py" "monitor#cyan=system-monitor"
+```
+Demonstrates both named colors (red, cyan) and hex colors (00FF00 for bright green).
 
 **Parallel Coordination (`examples/parallel-coordination.sh`)**
 ```bash
@@ -220,6 +236,7 @@ All examples are executable scripts:
 cd multiplex
 bash examples/sequential-build.sh
 bash examples/dev-environment.sh
+bash examples/color-demo.sh
 bash examples/http-benchmark.sh
 ```
 

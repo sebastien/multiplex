@@ -225,8 +225,9 @@ class Proc:
 class Command:
 	"""Represents a system command"""
 
-	def __init__(self, args: list[str], key: str, pid: int | None = None) -> None:
+	def __init__(self, args: list[str], key: str, color: str | None = None, pid: int | None = None) -> None:
 		self.key: str = key
+		self.color: str | None = color
 		self.args: list[str] = args
 		self.pid: int | None = pid
 		self.pgid: int | None = None  # Process group ID
@@ -287,6 +288,27 @@ class Formatter:
 		"err": "!",
 		"end": "=",
 	}
+	
+	# ANSI color codes for named colors
+	COLORS = {
+		"black": "30",
+		"red": "31",
+		"green": "32",
+		"yellow": "33",
+		"blue": "34",
+		"magenta": "35",
+		"cyan": "36",
+		"white": "37",
+		# NOTE: Maybe define aliases with a shorter syntax
+		"bright_black": "90",
+		"bright_red": "91",
+		"bright_green": "92",
+		"bright_yellow": "93",
+		"bright_blue": "94",
+		"bright_magenta": "95",
+		"bright_cyan": "96",
+		"bright_white": "97",
+	}
 
 	def __init__(
 		self,
@@ -296,22 +318,58 @@ class Formatter:
 	) -> None:
 		self.writer = writer
 
+	def _get_color_code(self, color: str | None) -> str:
+		"""Convert color name or hex code to ANSI escape sequence"""
+		if not color:
+			return ""
+		
+		color_lower = color.lower()
+		
+		# Check if it's a named color
+		if color_lower in self.COLORS:
+			return f"\033[{self.COLORS[color_lower]}m"
+		
+		# Check if it's a hex color (6 digits)
+		if len(color) == 6 and all(c in "0123456789abcdefABCDEF" for c in color):
+			# Convert hex to RGB
+			r = int(color[0:2], 16)
+			g = int(color[2:4], 16) 
+			b = int(color[4:6], 16)
+			return f"\033[38;2;{r};{g};{b}m"
+		
+		# Invalid color, return empty string
+		return ""
+
+	def _apply_color(self, text: str, color: str | None) -> bytes:
+		"""Apply color to text and return as bytes"""
+		if not color:
+			return bytes(text, "utf8")
+		
+		color_code = self._get_color_code(color)
+		if color_code:
+			reset_code = "\033[0m"
+			return bytes(f"{color_code}{text}{reset_code}", "utf8")
+		
+		return bytes(text, "utf8")
+
 	def start(self, command: Command) -> None:
 		return self.format(
-			"start", command.key, bytes(" ".join(str(_) for _ in command.args), "utf8")
+			"start", command.key, bytes(" ".join(str(_) for _ in command.args), "utf8"), color=command.color
 		)
 
 	def out(self, command: Command, data: bytes) -> None:
-		return self.format("out", command.key, data, self.SEP)
+		return self.format("out", command.key, data, self.SEP, command.color)
 
 	def err(self, command: Command, data: bytes) -> None:
-		return self.format("err", command.key, data, self.SEP)
+		return self.format("err", command.key, data, self.SEP, command.color)
 
 	def end(self, command: Command, data: int) -> None:
-		return self.format("end", command.key, data, self.SEP)
+		return self.format("end", command.key, data, self.SEP, command.color)
 
-	def format(self, stream: str, key: str, data: int | bytes, sep: str = SEP) -> None:
-		prefix = bytes(f"{self.STREAMS[stream]}{sep}{key}{sep}", "utf8")
+	def format(self, stream: str, key: str, data: int | bytes, sep: str = SEP, color: str | None = None) -> None:
+		colored_key = self._apply_color(key, color)
+		stream_prefix = bytes(f"{self.STREAMS[stream]}{sep}", "utf8")
+		sep_suffix = bytes(f"{sep}", "utf8")
 		lines = (
 			[bytes(str(data), "utf8")]
 			if not isinstance(data, bytes)
@@ -321,7 +379,9 @@ class Formatter:
 			lines = lines[:-1]
 		if self.writer:
 			for line in lines:
-				self.writer(prefix)
+				self.writer(stream_prefix)
+				self.writer(colored_key)
+				self.writer(sep_suffix)
 				self.writer(line)
 				self.writer(b"\n")
 
@@ -415,11 +475,12 @@ class Runner:
 		self,
 		command: list[str],
 		key: str | None = None,
+		color: str | None = None,
 		delay: float | str | None = None,
 		actions: list[str] | None = None,
 	) -> Command:
 		key = key or str(len(self.commands))
-		cmd = Command(command, key)
+		cmd = Command(command, key, color)
 		if actions and "silent" in actions:
 			cmd.silent()
 
@@ -720,7 +781,7 @@ def strip_ansi(data: str) -> str:
 
 
 RE_LINE = re.compile(
-	r"^((?P<key>[\dA-Za-z_]+)?(\+(?P<delay>\d+(\.\d+)?|[A-Za-z_][\dA-Za-z_]*))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
+	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(\+(?P<delay>\d+(\.\d+)?|[A-Za-z_][\dA-Za-z_]*))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
 )
 
 
@@ -728,6 +789,7 @@ class ParsedCommand(NamedTuple):
 	"""Data structure holding a parsed command."""
 
 	key: str
+	color: str | None
 	delay: float | str | None  # Can be numeric delay or named reference
 	actions: list[str]
 	command: list[str]
@@ -765,6 +827,7 @@ def parse(line: str) -> ParsedCommand:
 	if not match:
 		raise SyntaxError(f"Could not parse command: {line}")
 	key = match.group("key")
+	color = match.group("color")
 	delay_str = match.group("delay")
 	command = match.group("command")
 	actions = (match.group("action") or "").split("|")[1:]
@@ -778,7 +841,7 @@ def parse(line: str) -> ParsedCommand:
 			# It's a named delay (like "A")
 			delay = delay_str
 
-	return ParsedCommand(key, delay, actions, [_ for _ in splitargs(command)])
+	return ParsedCommand(key, color, delay, actions, [_ for _ in splitargs(command)])
 
 
 def cli(argv: list[str] | str = sys.argv[1:]) -> None:
@@ -829,9 +892,10 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 	out = open(out_path, "wt") if out_path else sys.stdout
 	if args.parse:
 		for command in args.commands:
-			key, delay, actions, cmd = parse(command)
+			key, color, delay, actions, cmd = parse(command)
 			out.write(f"Parsed: {command}\n")
 			out.write(f"- key: {key}\n")
+			out.write(f"- color: {color}\n")
 			out.write(f"- delay: {delay}\n")
 			out.write(f"- actions: {actions}\n")
 			out.write(f"- cmd: {cmd}\n")
@@ -839,10 +903,10 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 		runner = Runner()
 		for command in args.commands:
 			# FIXME: This is not correct, should take into consideration the \, etc.
-			key, delay, actions, cmd = parse(command)
+			key, color, delay, actions, cmd = parse(command)
 			# FIXME: Delay is not correct, we should sort the commands by delay and
 			# do that here instead of from the runner.
-			runner.run(cmd, key=key, delay=delay, actions=actions)
+			runner.run(cmd, key=key, color=color, delay=delay, actions=actions)
 		if args.timeout:
 			runner.join(timeout=args.timeout)
 			runner.terminate()
