@@ -163,12 +163,6 @@ build/require-py-%.task:
 		touch "$@"
 	fi
 
-data/csic_2010-normalTrafficTraining.txt:
-	curl -o "$@" 'https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/raw/master/csic_2010/normalTrafficTest.txt?inline=false'
-
-data/csic_2010-anomalousTrafficTraining.txt:
-	curl -o "$@" 'https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/raw/master/csic_2010/anomalousTrafficTest.txt?inline=false'
-
 print-%:
 	$(info $*=$($*))
 

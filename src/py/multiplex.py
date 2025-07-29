@@ -77,10 +77,36 @@ class Proc:
 	@staticmethod
 	def children(pid: int) -> set[int]:
 		res = set()
-		for line in (shell(["ps", "-g", str(pid)]) or b"").split(b"\n"):
-			cpid = str(line.split()[0], "utf8") if line else None
-			if cpid and RE_PID.match(cpid):
-				res.add(int(cpid))
+		# Use process group to find all children (including descendants)
+		try:
+			if _HAS_PROC:
+				# Linux: use /proc to find children more reliably
+				for proc_dir in Path("/proc").iterdir():
+					if proc_dir.is_dir() and proc_dir.name.isdigit():
+						try:
+							stat_file = proc_dir / "stat"
+							if stat_file.exists():
+								stat_content = stat_file.read_text().split()
+								if len(stat_content) > 4:
+									ppid = int(stat_content[3])
+									if ppid == pid:
+										res.add(int(proc_dir.name))
+						except (ValueError, OSError, IndexError):
+							continue
+			else:
+				# macOS/BSD: use ps to find process group members
+				for line in (shell(["ps", "-g", str(pid)]) or b"").split(b"\n"):
+					cpid = str(line.split()[0], "utf8") if line else None
+					if cpid and RE_PID.match(cpid):
+						child_pid = int(cpid)
+						if child_pid != pid:  # Don't include the parent itself
+							res.add(child_pid)
+		except Exception:
+			# Fallback to original method if anything fails
+			for line in (shell(["ps", "-g", str(pid)]) or b"").split(b"\n"):
+				cpid = str(line.split()[0], "utf8") if line else None
+				if cpid and RE_PID.match(cpid):
+					res.add(int(cpid))
 		return res
 
 	@staticmethod
@@ -113,11 +139,30 @@ class Proc:
 				return False
 
 	@staticmethod
-	def kill(pid: int, sig: signal.Signals = signal.SIGHUP) -> bool:
+	def kill(pid: int, sig: signal.Signals = signal.SIGTERM, use_group: bool = True) -> bool:
+		"""Kill a process and optionally its process group"""
 		try:
-			os.killpg(pid, sig)
+			if use_group:
+				# Try to kill the entire process group first
+				try:
+					os.killpg(pid, sig)
+				except ProcessLookupError:
+					# Process group doesn't exist, try individual process
+					pass
+				except OSError:
+					# May not have permission to kill group, try individual process
+					pass
+			
+			# Always try to kill the individual process
 			os.kill(pid, sig)
-			os.waitpid(pid, os.WNOHANG)
+			
+			# Only wait if we're killing (not just signaling)
+			if sig in (signal.SIGTERM, signal.SIGKILL):
+				try:
+					os.waitpid(pid, os.WNOHANG)
+				except OSError:
+					pass
+			
 			return True
 		except ProcessLookupError as e:
 			if e.errno == 3:  # No such process
@@ -128,8 +173,8 @@ class Proc:
 			return False
 
 	@classmethod
-	def killchild(cls, pid: int) -> bool:
-		return cls.kill(pid)
+	def killchild(cls, pid: int, sig: signal.Signals = signal.SIGTERM) -> bool:
+		return cls.kill(pid, sig, use_group=True)
 
 	@classmethod
 	def mem(cls, pid: int) -> tuple[str, str]:
@@ -184,6 +229,7 @@ class Command:
 		self.key: str = key
 		self.args: list[str] = args
 		self.pid: int | None = pid
+		self.pgid: int | None = None  # Process group ID
 		self._children: set[int] = set()
 		# Callbacks
 		self.onStart: list[StartCallback | None] = []
@@ -305,6 +351,8 @@ class Runner:
 	def __init__(self) -> None:
 		self.commands: dict[str, tuple[Command, Thread]] = {}
 		self.formatter: Formatter = Formatter()
+		self.graceful_timeout: float = 5.0  # Default graceful shutdown timeout
+		self.force_timeout: float = 2.0     # Additional time before SIGKILL
 		self.registerSignals()
 
 	def getActiveCommands(
@@ -395,6 +443,7 @@ class Runner:
 			start_new_session=True,
 		)
 		cmd.pid = process.pid
+		cmd.pgid = process.pid  # With start_new_session=True, pgid equals pid
 
 		def onEnd(data: int) -> None:
 			self.doEnd(cmd, data)
@@ -495,37 +544,79 @@ class Runner:
 		return [_[0] for _ in self.getActiveCommands(selection).values()]
 
 	def terminate(
-		self, *commands: Command, resolution: float = 0.1, timeout: int = 5
+		self, *commands: Command, graceful: bool = True, timeout: int | None = None
 	) -> bool:
-		"""Terminates given list of commands, waiting indefinitely or up
-		to the given `timeout` value."""
-		# We extract the commands the corresponding threads
+		"""Terminates given list of commands with optional graceful shutdown.
+		
+		Args:
+			*commands: Specific commands to terminate, or all if none specified
+			graceful: If True, try SIGTERM first, then SIGKILL after timeout
+			timeout: Override default timeout for graceful shutdown
+		
+		Returns:
+			True if all processes terminated successfully, False otherwise
+		"""
+		# Use provided timeout or defaults
+		grace_timeout = timeout or self.graceful_timeout
+		force_timeout = self.force_timeout
+		
+		# We extract the commands and corresponding threads
 		selection = (
 			dict((k, v) for k, v in self.commands.items() if v[0] in commands)
 			if commands
 			else self.commands
 		)
-		# Now we iterate and kill, the command processes, the threads will die
-		# off accordingly.
+		
+		if not selection:
+			return True
+		
+		# Phase 1: Graceful termination with SIGTERM
+		if graceful:
+			started = time.time()
+			killed_processes = set()
+			
+			# Send SIGTERM to all processes
+			for cmd, _ in selection.values():
+				all_pids = set([cmd.pid]).union(cmd.children)
+				for pid in all_pids:
+					if pid is not None and pid not in killed_processes:
+						if Proc.exists(pid) and Proc.kill(pid, signal.SIGTERM, use_group=True):
+							killed_processes.add(pid)
+			
+			# Wait for graceful shutdown
+			while selection and (time.time() - started) < grace_timeout:
+				selection = self.getActiveCommands(selection)
+				if selection:
+					time.sleep(0.1)  # Small sleep to avoid busy waiting
+			
+			# If all processes terminated gracefully, we're done
+			if not selection:
+				return True
+		
+		# Phase 2: Force termination with SIGKILL
 		started = time.time()
 		iteration = 0
 		killed_processes = set()
+		
 		while selection:
 			for cmd, _ in selection.values():
 				all_pids = set([cmd.pid]).union(cmd.children)
 				for pid in all_pids:
 					if pid is not None and pid not in killed_processes:
-						if cmd.pid and Proc.kill(pid):
+						if Proc.exists(pid) and Proc.kill(pid, signal.SIGKILL, use_group=True):
 							killed_processes.add(pid)
+			
 			iteration += 1
-			# We exit early after the timeout
+			# We exit after the force timeout
 			elapsed = time.time() - started
-			if elapsed >= timeout:
+			if elapsed >= force_timeout:
 				return False
-			# We update the number of active threads
+			
+			# Update the number of active threads
 			selection = self.getActiveCommands(selection)
 			if selection:
-				time.sleep(resolution)
+				time.sleep(0.1)
+		
 		return True
 
 	# --
@@ -534,8 +625,8 @@ class Runner:
 	# These are the key primitives that
 
 	def registerSignals(self) -> None:
-		# Only register for the signals we actually want to handle
-		signals_to_handle = ["SIGINT", "SIGTERM"]
+		# Register for signals we want to handle gracefully
+		signals_to_handle = ["SIGINT", "SIGTERM", "SIGHUP"]
 		for signame in signals_to_handle:
 			if hasattr(signal, signame):
 				try:
@@ -545,13 +636,43 @@ class Runner:
 					# Signal not available on this platform
 					pass
 
+	def propagateSignal(self, signum: int) -> None:
+		"""Propagate the received signal to all child processes"""
+		active_commands = self.getActiveCommands(None)
+		if not active_commands:
+			return
+			
+		for cmd, _ in active_commands.values():
+			if cmd.pid:
+				# Get all child processes
+				all_pids = set([cmd.pid]).union(cmd.children)
+				for pid in all_pids:
+					if pid and Proc.exists(pid):
+						try:
+							# Send the same signal that multiplex received
+							Proc.kill(pid, signal.Signals(signum), use_group=True)
+						except (OSError, ValueError):
+							# Process might have already died or signal not valid
+							pass
+
 	def onSignal(self, signum: int, frame: object) -> None:
 		signame = next((k for k, v in self.SIGNALS.items() if v == signum), None)
-		if signame in ("SIGINT", "SIGTERM"):
-			print(f"\nReceived {signame}, terminating processes...")
-			self.terminate()
+		if signame in ("SIGINT", "SIGTERM", "SIGHUP"):
+			print(f"\nReceived {signame}, gracefully shutting down processes...")
+			
+			# First, propagate the signal to children
+			self.propagateSignal(signum)
+			
+			# Then attempt graceful termination
+			if not self.terminate(graceful=True):
+				print("Graceful shutdown failed, forcing termination...")
+				self.terminate(graceful=False)
+			
 			# Wait for processes to actually terminate
-			self.join(timeout=2)
+			remaining = self.join(timeout=int(self.force_timeout))
+			if remaining:
+				print(f"Warning: {len(remaining)} processes did not terminate cleanly")
+			
 			# Exit gracefully after termination
 			sys.exit(0)
 		elif signame == "SIGCHLD":
@@ -585,8 +706,9 @@ def join(*commands: Command, timeout: int | None = None) -> list[Command]:
 	return Runner.Get().join(*commands, timeout=timeout)
 
 
-def terminate() -> bool:
-	return Runner.Get().terminate()
+def terminate(*commands: Command, graceful: bool = True) -> bool:
+	"""Terminate commands with optional graceful shutdown"""
+	return Runner.Get().terminate(*commands, graceful=graceful)
 
 
 def strip_ansi_bytes(data: bytes) -> bytes:
