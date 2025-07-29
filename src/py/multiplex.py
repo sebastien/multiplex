@@ -9,7 +9,7 @@ import os
 import re
 import select
 import signal
-import subprocess
+import subprocess  # nosec: B404
 import sys
 import time
 
@@ -64,7 +64,7 @@ _HAS_PROC = Path("/proc").exists()
 def shell(command: list[str], input: bytes | None = None) -> bytes | None:
 	"""Runs the given command as a subprocess, piping the input, stderr and out"""
 	# FROM: https://stackoverflow.com/questions/163542/how-do-i-pass-a-string-into-subprocess-popen-using-the-stdin-argument#165662
-	res = subprocess.run(
+	res = subprocess.run(  # nosec: B603
 		command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, input=input
 	)
 	return res.stdout if res.returncode == 0 else None
@@ -435,7 +435,7 @@ class Runner:
 		# NOTE: If the start_new_session attribute is set to true, then
 		# all the child processes will belong to the process group with the
 		# pid of the command.
-		process = subprocess.Popen(
+		process = subprocess.Popen(  # nosec: B603
 			command,
 			stdout=subprocess.PIPE,
 			stderr=subprocess.PIPE,

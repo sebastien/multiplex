@@ -1,24 +1,61 @@
+
+# --
+# ## Make Version Detection & Enforcement
+
+# Detect if we're running under GNU Make
+MAKE_VERSION := $(shell $(MAKE) --version 2>/dev/null | head -1)
+IS_GMAKE := $(if $(findstring GNU Make,$(MAKE_VERSION)),1,0)
+
+# If not GNU Make, check for gmake and provide guidance
+ifneq ($(IS_GMAKE),1)
+  GMAKE_AVAILABLE := $(shell which gmake 2>/dev/null)
+  ifneq ($(GMAKE_AVAILABLE),)
+    $(error This Makefile requires GNU Make. Please run: gmake $(MAKECMDGOALS))
+  else
+    $(error This Makefile requires GNU Make. Please install it: brew install make (macOS) or apt-get install make (Linux), then run: gmake $(MAKECMDGOALS))
+  endif
+endif
+
+# --
+# ## Make & Shell Configuration
+
 SHELL:= bash
 .SHELLFLAGS:= -eu -o pipefail -c
 MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
+
+# --
+# ## Project Configuration
 PROJECT:=multiplex
 PYPI_PROJECT=multiplex-sh
 VERSION:=$(shell grep VERSION setup.py  | head -n1 | cut -d '"' -f2)
 
-PYTHON=python
-PATH_SOURCES_PY=src/py
-PYTHON_MODULES=$(patsubst src/py/%,%,$(wildcard src/py/*))
-SOURCES_BIN:=$(wildcard bin/*)
-SOURCES_PY:=$(wildcard $(PATH_SOURCES_PY)/*.py $(PATH_SOURCES_PY)/*/*.py $(PATH_SOURCES_PY)/*/*/*.py $(PATH_SOURCES_PY)/*/*/*/*.py)
-MODULES_PY:=$(filter-out %/__main__,$(filter-out %/__init__,$(SOURCES_PY:$(PATH_SOURCES_PY)/%.py=%)))
+# --
+# ## Python Configuration
 
-PATH_LOCAL_PY=$(firstword $(shell python -c "import sys,pathlib;sys.stdout.write(' '.join([_ for _ in sys.path if _.startswith(str(pathlib.Path.home()))] ))"))
+PYTHON=python3
+PYTHON_MODULES=$(patsubst src/py/%,%,$(wildcard src/py/*))
+PYTHON_MODULES_PIP=ruff bandit mypy flake8
+PATH_PYTHON_LIB=run/lib/python
+PYTHONPATH:=$(abspath $(PATH_PYTHON_LIB)$(if $(PYTHONPATH),:$(PYTHONPATH)))
+export PYTHONPATH
+
+# --
+# ## Sources Configuration
+
+SOURCES_BIN:=$(wildcard bin/*)
+SOURCES_PY_PATH=src/py
+SOURCES_PY:=$(wildcard $(SOURCES_PY_PATH)/*.py $(SOURCES_PY_PATH)/*/*.py $(SOURCES_PY_PATH)/*/*/*.py $(SOURCES_PY_PATH)/*/*/*/*.py)
+MODULES_PY:=$(filter-out %/__main__,$(filter-out %/__init__,$(SOURCES_PY:$(SOURCES_PY_PATH)/%.py=%)))
+
+PATH_LOCAL_PY=$(firstword $(shell $(PYTHON) -c "import sys,pathlib;sys.stdout.write(' '.join([_ for _ in sys.path if _.startswith(str(pathlib.Path.home()))] ))"))
 PATH_LOCAL_BIN=$(HOME)/.local/bin
 
-REQUIRE_PY=flake8 bandit mypy twine
-PREP_ALL=$(REQUIRE_PY:%=build/require-py-%.task)
-# Commands
+PREP_ALL=$(PYTHON_MODULES_PIP:%=build/py-install-%.task)
+
+# --
+# ## Commands
+
 BANDIT=$(PYTHON) -m bandit
 FLAKE8=$(PYTHON) -m flake8
 MYPY=$(PYTHON) -m mypy
@@ -49,7 +86,6 @@ compile:
 	@echo "=== $@"
 	echo "Compiling $(MODULES_PY): $(SOURCES_PY)"
 	# NOTE: Output is going to be like '$(PROJECT)/__init__.cpython-310-x86_64-linux-gnu.so'
-
 	mkdir -p "build"
 	$(foreach M,$(MODULES_PY),mkdir -p build/$M;)
 	env -C build MYPYPATH=$(realpath .)/src/py mypyc -p $(PROJECT)
@@ -62,13 +98,13 @@ check: check-bandit check-flakes check-strict
 check-compiled:
 	@
 	echo "=== $@"
-	COMPILED=$$(PYTHONPATH=build python -c "import $(PROJECT);print($(PROJECT))")
+	COMPILED=$$(PYTHONPATH=build $(PYTHON) -c "import $(PROJECT);print($(PROJECT))")
 	echo "Extra compiled at: $$COMPILED"
 
 .PHONY: check-bandit
 check-bandit: $(PREP_ALL)
 	@echo "=== $@"
-	$(BANDIT) -r -s B101 src/py/coda
+	$(BANDIT) -r -s B101 $(wildcard src/py/*)
 
 .PHONY: check-flakes
 check-flakes: $(PREP_ALL)
@@ -81,23 +117,24 @@ check-mypyc: $(PREP_ALL)
 
 .PHONY: check-strict
 check-strict: $(PREP_ALL)
-	@
-	count_ok=0
-	count_err=0
-	files_err=
-	for item in $(SOURCES_PY); do
-		if $(MYPY) --strict $$item; then
+	@count_ok=0;
+	count_err=0;
+	files_err="";
+	for ITEM in $(SOURCES_PY); do
+		if $(MYPY) --strict $$ITEM; then
 			count_ok=$$(($$count_ok+1))
 		else
 			count_err=$$(($$count_err+1))
-			files_err+=" $$item"
+			files_err+=" $$ITEM"
 		fi
 	done
 	summary="OK $$count_ok ERR $$count_err TOTAL $$(($$count_err + $$count_ok))"
 	if [ "$$count_err" != "0" ]; then
-		for item in $$files_err; do
-			echo "ERR $$item"
-		done
+		if [ -n "$$files_err" ]; then
+			for item in $$files_err; do
+				echo "ERR $$item"
+			done
+		fi
 		echo "EOS FAIL $$summary"
 		exit 1
 	else
@@ -108,9 +145,9 @@ check-strict: $(PREP_ALL)
 lint: check-flakes
 	@
 
-.PHONY: format
-format:
-	@ruff $(SOURCES_PY)
+.PHONY: fmt
+fmt:
+	@$(PYTHON) -m ruff format #$(SOURCES_PY)
 
 .PHONY: release-prep
 release-prep: $(PREP_ALL)
@@ -156,9 +193,15 @@ try-uninstall:
 		done
 	fi
 
-build/require-py-%.task:
+build/py-install-%.task:
 	@
-	if $(PYTHON) -mpip install --user --upgrade '$*'; then
+	# Remove task file if it's older than 7 days to force weekly updates
+	if [ -f "$@" ] && [ $$(find "$@" -mtime +7 | wc -l) -gt 0 ]; then
+		echo "Refreshing $* (task file older than 7 days)";
+		rm -f "$@";
+	fi
+	mkdir -p "$(PATH_PYTHON_LIB)"
+	if $(PYTHON) -mpip install --target="$(PATH_PYTHON_LIB)" --upgrade '$*'; then
 		mkdir -p "$(dir $@)"
 		touch "$@"
 	fi
@@ -167,5 +210,4 @@ print-%:
 	$(info $*=$($*))
 
 .ONESHELL:
-
 # EOF
