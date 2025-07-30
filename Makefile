@@ -71,8 +71,10 @@ help:
 	@echo "  test           - Run all tests"
 	@echo "  test-unit      - Run unit tests only"
 	@echo "  test-color     - Run color tests only"
-	@echo "  test-delay-suffixes - Run delay suffix tests only"
-	@echo "  test-examples  - Test delay suffix functionality with examples"
+	@echo "  test-dependencies - Run dependency tests only"
+	@echo "  test-dependency-delays - Run dependency delay tests only"
+	@echo "  test-process-start - Run process start dependency tests only"
+	@echo "  test-examples  - Test dependency functionality with examples"
 	@echo "  check          - Run all code quality checks"
 	@echo "  check-bandit   - Run security audit with bandit"
 	@echo "  check-flakes   - Run flake8 linting"
@@ -111,6 +113,9 @@ test:
 	@echo "Running dependency delay tests..."
 	@$(PYTHON) tests/feature-dependency-delays.py
 	@echo ""
+	@echo "Running process start dependency tests..."
+	@$(PYTHON) tests/test-process-start-dependency.py
+	@echo ""
 	@echo "✅ All tests completed successfully!"
 
 .PHONY: test-unit
@@ -132,6 +137,11 @@ test-dependencies:
 test-dependency-delays:
 	@echo "=== Running dependency delay tests ==="
 	@$(PYTHON) tests/feature-dependency-delays.py
+
+.PHONY: test-process-start
+test-process-start:
+	@echo "=== Running process start dependency tests ==="
+	@$(PYTHON) tests/test-process-start-dependency.py
 
 .PHONY: test-examples
 test-examples:

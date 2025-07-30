@@ -11,6 +11,7 @@ import select
 import signal
 import subprocess  # nosec: B404
 import sys
+import threading
 import time
 
 # --
@@ -410,6 +411,7 @@ class Runner:
 
 	def __init__(self) -> None:
 		self.commands: dict[str, tuple[Command, Thread]] = {}
+		self.process_started: dict[str, threading.Event] = {}  # Track process start events
 		self.formatter: Formatter = Formatter()
 		self.graceful_timeout: float = 5.0  # Default graceful shutdown timeout
 		self.force_timeout: float = 2.0     # Additional time before SIGKILL
@@ -473,6 +475,13 @@ class Runner:
 			if delay:
 				time.sleep(delay)
 
+	def _waitForProcessStart(self, proc: str) -> None:
+		"""Wait for a named process to start before continuing"""
+		if proc in self.process_started:
+			event = self.process_started[proc]
+			# Wait for the event to be set (which means the process has started)
+			event.wait()
+
 	def _waitForEvent(self, event: str, *, delay: int | None = None) -> None:
 		raise NotImplementedError
 
@@ -489,13 +498,15 @@ class Runner:
 		if actions and "silent" in actions:
 			cmd.silent()
 
+		# Create a start event for this process
+		self.process_started[key] = threading.Event()
+
 		# Handle dependencies
 		if dependencies:
 			for dep in dependencies:
 				if dep.wait_for_start:
-					# Wait for process to start (not implemented yet, treating as end for now)
-					# TODO: Implement waiting for process start
-					self._waitForProcess(dep.key)
+					# Wait for process to start
+					self._waitForProcessStart(dep.key)
 				else:
 					# Wait for process to end
 					self._waitForProcess(dep.key)
@@ -516,6 +527,9 @@ class Runner:
 		)
 		cmd.pid = process.pid
 		cmd.pgid = process.pid  # With start_new_session=True, pgid equals pid
+
+		# Signal that the process has started
+		self.process_started[key].set()
 
 		def onEnd(data: int) -> None:
 			self.doEnd(cmd, data)
