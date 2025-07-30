@@ -64,6 +64,26 @@ MYPYC=mypyc
 
 cmd-check=if ! $$(which $1 &> /dev/null ); then echo "ERR Could not find command $1"; exit 1; fi; $1
 
+.PHONY: help
+help:
+	@echo "Available targets:"
+	@echo "  prep           - Install required Python modules"
+	@echo "  test           - Run all tests"
+	@echo "  test-unit      - Run unit tests only"
+	@echo "  test-color     - Run color tests only"
+	@echo "  test-delay-suffixes - Run delay suffix tests only"
+	@echo "  test-examples  - Test delay suffix functionality with examples"
+	@echo "  check          - Run all code quality checks"
+	@echo "  check-bandit   - Run security audit with bandit"
+	@echo "  check-flakes   - Run flake8 linting"
+	@echo "  check-strict   - Run strict mypy type checking"
+	@echo "  lint           - Run linting (alias for check-flakes)"
+	@echo "  fmt            - Format code with ruff"
+	@echo "  ci             - Run check and test (CI pipeline)"
+	@echo "  audit          - Run security audit"
+	@echo "  install        - Install to local Python environment"
+	@echo "  release        - Build and release to PyPI"
+
 .PHONY: prep
 prep: $(PREP_ALL)
 	@
@@ -75,6 +95,43 @@ run:
 .PHONY: ci
 ci: check test
 	@
+
+.PHONY: test
+test:
+	@echo "=== Running tests ==="
+	@echo "Running unit parse tests..."
+	@$(PYTHON) tests/unit-parse.py
+	@echo ""
+	@echo "Running color tests..."
+	@$(PYTHON) tests/test-color.py
+	@echo ""
+	@echo "Running delay suffix feature tests..."
+	@$(PYTHON) tests/feature-delay_suffixes.py
+	@echo ""
+	@echo "✅ All tests completed successfully!"
+
+.PHONY: test-unit
+test-unit:
+	@echo "=== Running unit tests ==="
+	@$(PYTHON) tests/unit-parse.py
+
+.PHONY: test-color
+test-color:
+	@echo "=== Running color tests ==="
+	@$(PYTHON) tests/test-color.py
+
+.PHONY: test-delay-suffixes
+test-delay-suffixes:
+	@echo "=== Running delay suffix tests ==="
+	@$(PYTHON) tests/feature-delay_suffixes.py
+
+.PHONY: test-examples
+test-examples:
+	@echo "=== Testing examples ==="
+	@echo "Testing basic delay suffixes functionality..."
+	@$(PYTHON) src/py/multiplex.py "echo 'Test 1: immediate'" "+100ms=echo 'Test 2: 100ms later'" "+1s|end=echo 'Test 3: 1s later - done'"
+	@echo ""
+	@echo "Examples test completed!"
 
 .PHONY: audit
 audit: check-bandit

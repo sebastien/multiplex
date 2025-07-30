@@ -152,17 +152,17 @@ class Proc:
 				except OSError:
 					# May not have permission to kill group, try individual process
 					pass
-			
+
 			# Always try to kill the individual process
 			os.kill(pid, sig)
-			
+
 			# Only wait if we're killing (not just signaling)
 			if sig in (signal.SIGTERM, signal.SIGKILL):
 				try:
 					os.waitpid(pid, os.WNOHANG)
 				except OSError:
 					pass
-			
+
 			return True
 		except ProcessLookupError as e:
 			if e.errno == 3:  # No such process
@@ -464,12 +464,17 @@ class Runner:
 	# ### Running, joining, terminating
 	#
 	# These are the key primitives that
-	def _wait_for_process(self, process_key: str) -> None:
+	def _waitForProcess(self, proc: str, *, delay: int | None = None) -> None:
 		"""Wait for a named process to complete before continuing"""
-		if process_key in self.commands:
-			cmd, thread = self.commands[process_key]
+		if proc in self.commands:
+			_, thread = self.commands[proc]
 			# Wait for the thread to complete (which means the process has ended)
 			thread.join()
+			if delay:
+				time.sleep(delay)
+
+	def _waitForEvent(self, event: str, *, delay: int | None = None) -> None:
+		raise NotImplementedError
 
 	def run(
 		self,
@@ -491,7 +496,7 @@ class Runner:
 				time.sleep(delay)
 			elif isinstance(delay, str):
 				# Named delay: wait for named process to complete
-				self._wait_for_process(delay)
+				self._waitForProcess(delay)
 
 		# NOTE: If the start_new_session attribute is set to true, then
 		# all the child processes will belong to the process group with the
@@ -781,7 +786,7 @@ def strip_ansi(data: str) -> str:
 
 
 RE_LINE = re.compile(
-	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(\+(?P<delay>\d+(\.\d+)?|[A-Za-z_][\dA-Za-z_]*))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
+	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(\+(?P<delay>[^|=]+?))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
 )
 
 
@@ -820,6 +825,59 @@ def splitargs(command: str) -> Iterable[str]:
 		yield command[o:]
 
 
+RE_DELAY=re.compile(r'^(?:(?P<minutes>\d+(?:\.\d+)?)m)?(?:(?P<seconds>\d+(?:\.\d+)?)s)?(?:(?P<milliseconds>\d+(?:\.\d+)?)ms)?$|^(?P<default>\d+(?:\.\d*)?)$')
+def parse_delay(delay_str: str) -> float | str:
+	"""Parse a delay string with optional time suffixes.
+	
+	Supported formats:
+	- Plain number: "5", "1.5", "1.0"
+	- Milliseconds: "500ms", "1000ms" 
+	- Seconds: "5s", "1.5s"
+	- Minutes: "1m", "2.5m"
+	- Complex combinations: "1m30s", "1m1s1ms", "2m15s500ms"
+	- Named delay: "A", "server"
+	
+	Returns delay in seconds as float, or the original string for named delays.
+	"""
+	delay_str = delay_str.strip()
+	
+	# Try to match the new regex pattern
+	match = re.match(RE_DELAY, delay_str)
+	if match:
+		# Check if it's a default number (plain numeric value)
+		default = match.group('default')
+		if default:
+			return float(default)
+		
+		# Parse time components
+		total_seconds = 0.0
+		
+		# Minutes
+		minutes = match.group('minutes')
+		if minutes:
+			total_seconds += float(minutes) * 60.0
+		
+		# Seconds  
+		seconds = match.group('seconds')
+		if seconds:
+			total_seconds += float(seconds)
+		
+		# Milliseconds
+		milliseconds = match.group('milliseconds')
+		if milliseconds:
+			total_seconds += float(milliseconds) / 1000.0
+		
+		return total_seconds
+	
+	# If regex doesn't match, try parsing as named delay
+	try:
+		# Final fallback: try parsing as plain number
+		return float(delay_str)
+	except ValueError:
+		# It's a named delay (like "A" or "server")
+		return delay_str
+
+
 def parse(line: str) -> ParsedCommand:
 	"""Parses a command line"""
 	match = RE_LINE.match(line)
@@ -832,14 +890,10 @@ def parse(line: str) -> ParsedCommand:
 	command = match.group("command")
 	actions = (match.group("action") or "").split("|")[1:]
 
-	# Parse delay: can be numeric (float) or named (string)
+	# Parse delay: can be numeric (float), with unit suffix, or named (string)
 	delay: float | str | None = None
 	if delay_str:
-		try:
-			delay = float(delay_str)
-		except ValueError:
-			# It's a named delay (like "A")
-			delay = delay_str
+		delay = parse_delay(delay_str)
 
 	return ParsedCommand(key, color, delay, actions, [_ for _ in splitargs(command)])
 

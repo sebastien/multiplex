@@ -94,11 +94,24 @@ Commands follow a structured format: `[KEY][#COLOR][+DELAY][|ACTIONS]=COMMAND`
 Commands can be delayed in two ways:
 
 #### Time-based delays
-- **Format**: `+SECONDS` where SECONDS can be integer or decimal
+- **Format**: `+SECONDS` where SECONDS can be integer or decimal, with optional time unit suffixes
+- **Time unit suffixes**:
+  - `ms` for milliseconds (e.g., `+500ms` = 0.5 seconds)
+  - `s` for seconds (e.g., `+5s` = 5 seconds)
+  - `m` for minutes (e.g., `+2m` = 120 seconds)
+  - **Complex combinations**: All units can be combined in any order
 - **Examples**:
   - `+5=python script.py` (wait 5 seconds)
   - `+1.5=echo "delayed"` (wait 1.5 seconds)
-  - `SERVER+10=curl localhost:8000` (named SERVER, wait 10s)
+  - `+1.0=echo "explicit float"` (wait 1 second)
+  - `+500ms=echo "half second"` (wait 0.5 seconds)
+  - `+2s=echo "two seconds"` (wait 2 seconds)
+  - `+1m=echo "one minute"` (wait 60 seconds)
+  - `+1m30s=echo "ninety seconds"` (wait 90 seconds)
+  - `+1m1s1ms=echo "complex timing"` (wait 61.001 seconds)
+  - `+2s500ms=echo "precise timing"` (wait 2.5 seconds)
+  - `+2m30s750ms=echo "maximum precision"` (wait 150.75 seconds)
+  - `SERVER+10s=curl localhost:8000` (named SERVER, wait 10s)
 
 #### Process-based delays  
 - **Format**: `+PROCESS_NAME` wait for named process to complete
@@ -167,9 +180,15 @@ Demonstrates process-based delays where one command waits for another to complet
 
 **Time-based Delays (`examples/time-delays.sh`)**
 ```bash
-multiplex "echo 'immediate'" "+1=echo 'after 1s'" "+2.5=echo 'after 2.5s'"
+multiplex "echo 'immediate'" "+500ms=echo 'after 500ms'" "+2s=echo 'after 2s'" "+1m=echo 'after 1m'" "+1m30s750ms=echo 'complex: 90.75s'"
 ```
-Shows different timing patterns with integer and decimal delays.
+Shows different timing patterns with integer delays, decimal delays, and complex time unit combinations supporting millisecond precision.
+
+**Delay Suffixes Demo (`examples/delay-suffixes-demo.sh`)**
+```bash
+multiplex "echo 'Starting services...'" "+100ms=echo 'Quick response'" "+2s=echo 'After 2 seconds'" "+1m=echo 'One minute later'" "+1m30s750ms=echo 'Complex timing - 90.75 seconds'"
+```
+Demonstrates the new delay suffix functionality with milliseconds, seconds, minutes, and complex combinations including `1m30s750ms` for precise timing control.
 
 **Process Dependencies (`examples/process-delays.sh`)**
 ```bash
@@ -184,6 +203,12 @@ Demonstrates chaining processes where each waits for the previous to complete.
 multiplex "DB#blue=mongod" "API#green+2=node server.js" "UI#cyan+2=npm run ui" "logs#FFA500+5=tail -f app.log"
 ```
 Shows how to use colors to visually distinguish different services in a development stack.
+
+**Service startup with precise timing:**
+```bash
+multiplex "DB#blue=docker run postgres" "API#green+5s=node server.js" "UI#cyan+500ms=npm run dev" "HEALTH#yellow+10s|end=curl localhost:3000/health"
+```
+Demonstrates delay suffixes for precise service coordination - database starts immediately, API waits 5 seconds, UI starts after 500ms, and health check runs after 10 seconds then exits.
 
 **Color Demo (`examples/color-demo.sh`)**
 ```bash
@@ -237,6 +262,8 @@ cd multiplex
 bash examples/sequential-build.sh
 bash examples/dev-environment.sh
 bash examples/color-demo.sh
+bash examples/time-delays.sh
+bash examples/delay-suffixes-demo.sh
 bash examples/http-benchmark.sh
 ```
 
