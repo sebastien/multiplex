@@ -481,7 +481,7 @@ class Runner:
 		command: list[str],
 		key: str | None = None,
 		color: str | None = None,
-		delay: float | str | None = None,
+		dependencies: list[Dependency] | None = None,
 		actions: list[str] | None = None,
 	) -> Command:
 		key = key or str(len(self.commands))
@@ -489,14 +489,20 @@ class Runner:
 		if actions and "silent" in actions:
 			cmd.silent()
 
-		# Handle delays
-		if delay is not None:
-			if isinstance(delay, (int, float)):
-				# Numeric delay: wait specified seconds
-				time.sleep(delay)
-			elif isinstance(delay, str):
-				# Named delay: wait for named process to complete
-				self._waitForProcess(delay)
+		# Handle dependencies
+		if dependencies:
+			for dep in dependencies:
+				if dep.wait_for_start:
+					# Wait for process to start (not implemented yet, treating as end for now)
+					# TODO: Implement waiting for process start
+					self._waitForProcess(dep.key)
+				else:
+					# Wait for process to end
+					self._waitForProcess(dep.key)
+				
+				# Apply any delays after dependency
+				for delay in dep.delays:
+					time.sleep(delay)
 
 		# NOTE: If the start_new_session attribute is set to true, then
 		# all the child processes will belong to the process group with the
@@ -786,8 +792,16 @@ def strip_ansi(data: str) -> str:
 
 
 RE_LINE = re.compile(
-	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(\+(?P<delay>[^|=]+?))?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
+	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(?P<deps>:[^|=]+?)?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
 )
+
+
+class Dependency(NamedTuple):
+	"""Data structure holding a parsed dependency."""
+	
+	key: str  # Process name to wait for
+	wait_for_start: bool  # True if waiting for start (&), False for end
+	delays: list[float]  # List of delays to apply after dependency
 
 
 class ParsedCommand(NamedTuple):
@@ -795,7 +809,7 @@ class ParsedCommand(NamedTuple):
 
 	key: str
 	color: str | None
-	delay: float | str | None  # Can be numeric delay or named reference
+	dependencies: list[Dependency]  # List of dependencies to wait for
 	actions: list[str]
 	command: list[str]
 
@@ -823,6 +837,68 @@ def splitargs(command: str) -> Iterable[str]:
 		p = c
 	if o != n:
 		yield command[o:]
+
+
+def parse_dependencies(deps_str: str) -> list[Dependency]:
+	"""Parse dependency string into list of Dependency objects.
+	
+	Dependencies are in the format: :KEY[&][+DELAY...]:KEY2[&][+DELAY...]...
+	
+	Examples:
+	- ":A" - wait for process A to end
+	- ":A&" - wait for process A to start  
+	- ":A+1s" - wait for process A to end, then wait 1 second
+	- ":A&+500ms" - wait for process A to start, then wait 500ms
+	- ":A+1s+500ms" - wait for process A to end, then wait 1.5 seconds total
+	- ":A:B&+2s" - wait for A to end, and wait for B to start then 2s
+	"""
+	if not deps_str or not deps_str.startswith(':'):
+		return []
+	
+	# Remove leading colon and split by colons to get individual dependencies
+	deps_str = deps_str[1:]  # Remove leading ':'
+	dep_parts = deps_str.split(':')
+	
+	dependencies = []
+	for dep_part in dep_parts:
+		if not dep_part.strip():
+			continue
+			
+		# Check for & (wait for start)
+		wait_for_start = False
+		if '&' in dep_part:
+			parts = dep_part.split('&', 1)
+			key = parts[0]
+			wait_for_start = True
+			delay_part = parts[1] if len(parts) > 1 else ""
+		else:
+			# Split by + to separate key from delays
+			plus_pos = dep_part.find('+')
+			if plus_pos != -1:
+				key = dep_part[:plus_pos]
+				delay_part = dep_part[plus_pos:]
+			else:
+				key = dep_part
+				delay_part = ""
+		
+		# Parse delays
+		delays = []
+		if delay_part:
+			# Split by + and parse each delay
+			delay_strs = [d for d in delay_part.split('+') if d.strip()]
+			for delay_str in delay_strs:
+				try:
+					parsed_delay = parse_delay(delay_str)
+					if isinstance(parsed_delay, (int, float)):
+						delays.append(float(parsed_delay))
+				except:
+					# Skip invalid delays
+					pass
+		
+		if key.strip():
+			dependencies.append(Dependency(key.strip(), wait_for_start, delays))
+	
+	return dependencies
 
 
 RE_DELAY=re.compile(r'^(?:(?P<minutes>\d+(?:\.\d+)?)m)?(?:(?P<seconds>\d+(?:\.\d+)?)s)?(?:(?P<milliseconds>\d+(?:\.\d+)?)ms)?$|^(?P<default>\d+(?:\.\d*)?)$')
@@ -879,23 +955,25 @@ def parse_delay(delay_str: str) -> float | str:
 
 
 def parse(line: str) -> ParsedCommand:
-	"""Parses a command line"""
+	"""Parses a command line with the new dependency-based format.
+	
+	Format: [KEY][#COLOR][:DEP…][|ACTION…]=COMMAND
+	Where DEP is: [KEY][&][+DELAY…]
+	"""
 	match = RE_LINE.match(line)
-	# TODO: Should be a bit more sophisticated
 	if not match:
 		raise SyntaxError(f"Could not parse command: {line}")
+	
 	key = match.group("key")
 	color = match.group("color")
-	delay_str = match.group("delay")
+	deps_str = match.group("deps")
 	command = match.group("command")
 	actions = (match.group("action") or "").split("|")[1:]
 
-	# Parse delay: can be numeric (float), with unit suffix, or named (string)
-	delay: float | str | None = None
-	if delay_str:
-		delay = parse_delay(delay_str)
+	# Parse dependencies
+	dependencies = parse_dependencies(deps_str or "")
 
-	return ParsedCommand(key, color, delay, actions, [_ for _ in splitargs(command)])
+	return ParsedCommand(key, color, dependencies, actions, [_ for _ in splitargs(command)])
 
 
 def cli(argv: list[str] | str = sys.argv[1:]) -> None:
@@ -946,21 +1024,20 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 	out = open(out_path, "wt") if out_path else sys.stdout
 	if args.parse:
 		for command in args.commands:
-			key, color, delay, actions, cmd = parse(command)
+			key, color, dependencies, actions, cmd = parse(command)
 			out.write(f"Parsed: {command}\n")
 			out.write(f"- key: {key}\n")
 			out.write(f"- color: {color}\n")
-			out.write(f"- delay: {delay}\n")
+			out.write(f"- dependencies: {dependencies}\n")
 			out.write(f"- actions: {actions}\n")
 			out.write(f"- cmd: {cmd}\n")
 	else:
 		runner = Runner()
 		for command in args.commands:
 			# FIXME: This is not correct, should take into consideration the \, etc.
-			key, color, delay, actions, cmd = parse(command)
-			# FIXME: Delay is not correct, we should sort the commands by delay and
-			# do that here instead of from the runner.
-			runner.run(cmd, key=key, color=color, delay=delay, actions=actions)
+			key, color, dependencies, actions, cmd = parse(command)
+			# FIXME: Dependencies should be sorted and handled properly
+			runner.run(cmd, key=key, color=color, dependencies=dependencies, actions=actions)
 		if args.timeout:
 			runner.join(timeout=args.timeout)
 			runner.terminate()

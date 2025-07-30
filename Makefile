@@ -105,8 +105,11 @@ test:
 	@echo "Running color tests..."
 	@$(PYTHON) tests/test-color.py
 	@echo ""
-	@echo "Running delay suffix feature tests..."
-	@$(PYTHON) tests/feature-delay_suffixes.py
+	@echo "Running dependency feature tests..."
+	@$(PYTHON) tests/feature-dependencies.py
+	@echo ""
+	@echo "Running dependency delay tests..."
+	@$(PYTHON) tests/feature-dependency-delays.py
 	@echo ""
 	@echo "✅ All tests completed successfully!"
 
@@ -120,16 +123,21 @@ test-color:
 	@echo "=== Running color tests ==="
 	@$(PYTHON) tests/test-color.py
 
-.PHONY: test-delay-suffixes
-test-delay-suffixes:
-	@echo "=== Running delay suffix tests ==="
-	@$(PYTHON) tests/feature-delay_suffixes.py
+.PHONY: test-dependencies
+test-dependencies:
+	@echo "=== Running dependency tests ==="
+	@$(PYTHON) tests/feature-dependencies.py
+
+.PHONY: test-dependency-delays
+test-dependency-delays:
+	@echo "=== Running dependency delay tests ==="
+	@$(PYTHON) tests/feature-dependency-delays.py
 
 .PHONY: test-examples
 test-examples:
 	@echo "=== Testing examples ==="
-	@echo "Testing basic delay suffixes functionality..."
-	@$(PYTHON) src/py/multiplex.py "echo 'Test 1: immediate'" "+100ms=echo 'Test 2: 100ms later'" "+1s|end=echo 'Test 3: 1s later - done'"
+	@echo "Testing basic dependency functionality..."
+	@$(PYTHON) src/py/multiplex.py "A=echo 'Process A started'" ":A=echo 'Waiting for A to finish'" ":A+1s|end=echo 'A finished, waited 1s'"
 	@echo ""
 	@echo "Examples test completed!"
 

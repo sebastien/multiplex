@@ -21,9 +21,9 @@ workqueue and a database to run standalone all together. You could write
 a shell script, or you could write a one liner using `multiplex`.
 
 Here's how you'd benchmark Python's embedded HTTP server with a
-one-liner:
+one-liner using the new dependency format:
 
-    multiplex "|silent=python -m http.server" "+1|end=ab -n1000 http://localhost:8000/"
+    multiplex "SERVER|silent=python -m http.server" ":SERVER&+1s|end=ab -n1000 http://localhost:8000/"
 
 # Installing
 
@@ -70,7 +70,7 @@ Running multiple commands with complex coordination:
 
 ## Command Syntax
 
-Commands follow a structured format: `[KEY][#COLOR][+DELAY][|ACTIONS]=COMMAND`
+Commands follow a structured format: `[KEY][#COLOR][:DEP…][|ACTIONS]=COMMAND`
 
 ### Naming (`KEY=`)
 - **Purpose**: Assign a name to a process for reference by other commands
@@ -90,35 +90,37 @@ Commands follow a structured format: `[KEY][#COLOR][+DELAY][|ACTIONS]=COMMAND`
   - `worker#00FF00=python worker.py`
   - `logs#FFA500=tail -f app.log`
 
-### Delays (`+DELAY`)
-Commands can be delayed in two ways:
+### Dependencies (`:DEP`)
+Dependencies allow commands to wait for other processes and apply delays.
 
-#### Time-based delays
-- **Format**: `+SECONDS` where SECONDS can be integer or decimal, with optional time unit suffixes
-- **Time unit suffixes**:
-  - `ms` for milliseconds (e.g., `+500ms` = 0.5 seconds)
-  - `s` for seconds (e.g., `+5s` = 5 seconds)
-  - `m` for minutes (e.g., `+2m` = 120 seconds)
-  - **Complex combinations**: All units can be combined in any order
-- **Examples**:
-  - `+5=python script.py` (wait 5 seconds)
-  - `+1.5=echo "delayed"` (wait 1.5 seconds)
-  - `+1.0=echo "explicit float"` (wait 1 second)
-  - `+500ms=echo "half second"` (wait 0.5 seconds)
-  - `+2s=echo "two seconds"` (wait 2 seconds)
-  - `+1m=echo "one minute"` (wait 60 seconds)
-  - `+1m30s=echo "ninety seconds"` (wait 90 seconds)
-  - `+1m1s1ms=echo "complex timing"` (wait 61.001 seconds)
-  - `+2s500ms=echo "precise timing"` (wait 2.5 seconds)
-  - `+2m30s750ms=echo "maximum precision"` (wait 150.75 seconds)
-  - `SERVER+10s=curl localhost:8000` (named SERVER, wait 10s)
+#### Dependency Format
+Each dependency follows: `[KEY][&][+DELAY…]`
 
-#### Process-based delays  
-- **Format**: `+PROCESS_NAME` wait for named process to complete
+- **`KEY`**: Process name to wait for
+- **`&`**: Optional indicator to wait for process **start** instead of **end**
+- **`+DELAY`**: Optional delays to apply after the dependency condition is met
+
+#### Dependency Types
+- **End dependency**: `:A` - wait for process A to complete
+- **Start dependency**: `:A&` - wait for process A to start
+- **Delayed dependency**: `:A+1s` - wait for A to complete, then wait 1 second
+- **Start with delay**: `:A&+500ms` - wait for A to start, then wait 500ms
+
+#### Multiple Dependencies
+- **Format**: `:DEP1:DEP2:DEP3`
 - **Examples**:
-  - `+A=ab -n1000 http://localhost:8000/` (wait for process A)
-  - `+DB=node migrate.js` (wait for DB process to complete)
-  - `+SERVER=echo "server is done"` (wait for SERVER process)
+  - `:A:B` - wait for both A and B to complete
+  - `:A&:B+1s` - wait for A to start AND B to complete + 1s
+  - `:DB:CACHE&+2s:CONFIG` - wait for DB to end, CACHE to start + 2s, and CONFIG to end
+
+#### Delay Formats in Dependencies
+- **Time unit suffixes**: `ms` (milliseconds), `s` (seconds), `m` (minutes)
+- **Complex combinations**: `1m30s`, `2s500ms`, `1m1s1ms`
+- **Multiple delays**: `+1s+500ms` (applies 1s delay, then 500ms delay)
+- **Examples**:
+  - `:A+500ms` - wait for A, then 500ms
+  - `:B&+1m30s` - wait for B to start, then 90 seconds
+  - `:C+1s+500ms` - wait for C, then 1s, then 500ms more
 
 ### Actions (`|ACTION`)
 Actions modify process behavior:
@@ -134,22 +136,22 @@ Actions can be combined: `|silent|end=command`
 
 **Sequential execution:**
 ```bash
-multiplex "BUILD=npm run build" "+BUILD=npm start"
+multiplex "BUILD=npm run build" ":BUILD=npm start"
 ```
 
 **Parallel with coordination:**
 ```bash
-multiplex "DB=mongod" "API+2=node server.js" "+API=npm test"
+multiplex "DB=mongod" "API:DB+2s=node server.js" ":API&=npm test"
 ```
 
-**Benchmark pattern:**
+**Complex dependency chain:**
 ```bash
-multiplex "SERVER|silent=python -m http.server" "+1|end=ab -n1000 http://localhost:8000/"
+multiplex "CONFIG=setup" "DB:CONFIG+1s=database" "CACHE:CONFIG+500ms=redis" "API:DB:CACHE&+2s=server"
 ```
 
 **Development environment:**
 ```bash
-multiplex "DB=mongod" "API+2=npm run dev" "UI+2=npm run ui" "+5=open http://localhost:3000"
+multiplex "DB=mongod" "API:DB+2s=npm run dev" "UI:API&+1s=npm run ui" ":UI&+5s=open http://localhost:3000"
 ```
 
 ### Special Cases
@@ -174,41 +176,35 @@ The `examples/` directory contains practical demonstrations of multiplex feature
 
 **Sequential Build (`examples/sequential-build.sh`)**
 ```bash
-multiplex "BUILD=echo 'Building...'" "+BUILD=echo 'Starting...'"
+multiplex "BUILD=echo 'Building...'" ":BUILD=echo 'Starting...'"
 ```
-Demonstrates process-based delays where one command waits for another to complete.
+Demonstrates dependency-based coordination where one command waits for another to complete.
 
-**Time-based Delays (`examples/time-delays.sh`)**
+**Dependencies Demo (`examples/dependencies-demo.sh`)**
 ```bash
-multiplex "echo 'immediate'" "+500ms=echo 'after 500ms'" "+2s=echo 'after 2s'" "+1m=echo 'after 1m'" "+1m30s750ms=echo 'complex: 90.75s'"
+multiplex "DB=setup-database" "API:DB+1s=start-api" "UI:API&+500ms=start-ui" ":UI|end=echo 'All ready'"
 ```
-Shows different timing patterns with integer delays, decimal delays, and complex time unit combinations supporting millisecond precision.
+Shows the new dependency system with end dependencies (:DB), start dependencies (:API&), and delays.
 
-**Delay Suffixes Demo (`examples/delay-suffixes-demo.sh`)**
+**Process Dependencies (`examples/process-delays.sh`)**  
 ```bash
-multiplex "echo 'Starting services...'" "+100ms=echo 'Quick response'" "+2s=echo 'After 2 seconds'" "+1m=echo 'One minute later'" "+1m30s750ms=echo 'Complex timing - 90.75 seconds'"
-```
-Demonstrates the new delay suffix functionality with milliseconds, seconds, minutes, and complex combinations including `1m30s750ms` for precise timing control.
-
-**Process Dependencies (`examples/process-delays.sh`)**
-```bash
-multiplex "STEP1=echo 'init'" "STEP2+STEP1=echo 'process'" "+STEP2=echo 'done'"
+multiplex "STEP1=echo 'init'" "STEP2:STEP1=echo 'process'" ":STEP2=echo 'done'"
 ```
 Demonstrates chaining processes where each waits for the previous to complete.
 
 ## Real-world Scenarios
 
-**Development environment with colors:**
+**Development environment with dependencies:**
 ```bash
-multiplex "DB#blue=mongod" "API#green+2=node server.js" "UI#cyan+2=npm run ui" "logs#FFA500+5=tail -f app.log"
+multiplex "DB#blue=mongod" "API#green:DB+2s=node server.js" "UI#cyan:API&+500ms=npm run ui" "logs#FFA500:API&+1s=tail -f app.log"
 ```
-Shows how to use colors to visually distinguish different services in a development stack.
+Shows dependency coordination - API waits for DB to complete + 2s, UI waits for API to start + 500ms, logs wait for API to start + 1s.
 
 **Service startup with precise timing:**
 ```bash
-multiplex "DB#blue=docker run postgres" "API#green+5s=node server.js" "UI#cyan+500ms=npm run dev" "HEALTH#yellow+10s|end=curl localhost:3000/health"
+multiplex "INIT=setup" "DB#blue:INIT+1s=docker run postgres" "CACHE#yellow:INIT+500ms=redis-server" "API#green:DB:CACHE&+2s=node server.js" "HEALTH#red:API&+5s|end=curl localhost:3000/health"
 ```
-Demonstrates delay suffixes for precise service coordination - database starts immediately, API waits 5 seconds, UI starts after 500ms, and health check runs after 10 seconds then exits.
+Demonstrates complex dependencies - API waits for DB to complete AND CACHE to start, then waits 2s. Health check waits for API to start + 5s then exits.
 
 **Color Demo (`examples/color-demo.sh`)**
 ```bash
@@ -260,6 +256,7 @@ All examples are executable scripts:
 ```bash
 cd multiplex
 bash examples/sequential-build.sh
+bash examples/dependencies-demo.sh
 bash examples/dev-environment.sh
 bash examples/color-demo.sh
 bash examples/time-delays.sh

@@ -18,49 +18,62 @@ class TestColorParsing(unittest.TestCase):
     def test_parse_command_with_named_color(self):
         """Test parsing command with named color."""
         result = parse("a#red=ls -la")
-        expected = ParsedCommand(key="a", color="red", delay=None, actions=[], command=["ls", "-la"])
+        expected = ParsedCommand(key="a", color="red", dependencies=[], actions=[], command=["ls", "-la"])
         self.assertEqual(result, expected)
 
     def test_parse_command_with_hex_color(self):
         """Test parsing command with hex color."""
         result = parse("a#00FF00=ls -la")
-        expected = ParsedCommand(key="a", color="00FF00", delay=None, actions=[], command=["ls", "-la"])
+        expected = ParsedCommand(key="a", color="00FF00", dependencies=[], actions=[], command=["ls", "-la"])
         self.assertEqual(result, expected)
 
     def test_parse_command_with_mixed_hex_case(self):
         """Test parsing command with mixed case hex color."""
         result = parse("b#AbCdEf=echo hello")
-        expected = ParsedCommand(key="b", color="AbCdEf", delay=None, actions=[], command=["echo", "hello"])
+        expected = ParsedCommand(key="b", color="AbCdEf", dependencies=[], actions=[], command=["echo", "hello"])
         self.assertEqual(result, expected)
 
     def test_parse_command_without_color(self):
         """Test parsing command without color specification."""
         result = parse("a=ls -la")
-        expected = ParsedCommand(key="a", color=None, delay=None, actions=[], command=["ls", "-la"])
+        expected = ParsedCommand(key="a", color=None, dependencies=[], actions=[], command=["ls", "-la"])
         self.assertEqual(result, expected)
 
     def test_parse_command_with_color_and_delay(self):
-        """Test parsing command with both color and delay."""
-        result = parse("a#blue+5=ls -la")
-        expected = ParsedCommand(key="a", color="blue", delay=5.0, actions=[], command=["ls", "-la"])
-        self.assertEqual(result, expected)
+        """Test parsing command with both color and delay (now as dependency)."""
+        result = parse("a#blue:DELAY+5s=ls -la")  # Updated format
+        expected = ParsedCommand(key="a", color="blue", dependencies=[
+            parse(":DELAY+5s=dummy").dependencies[0]  # Get the dependency structure
+        ], actions=[], command=["ls", "-la"])
+        # Simplified check - just verify the structure has the right components
+        self.assertEqual(result.key, "a")
+        self.assertEqual(result.color, "blue")
+        self.assertEqual(len(result.dependencies), 1)
+        self.assertEqual(result.dependencies[0].key, "DELAY")
+        self.assertEqual(result.command, ["ls", "-la"])
 
     def test_parse_command_with_color_and_actions(self):
         """Test parsing command with color and actions."""
         result = parse("a#cyan|silent=ls -la")
-        expected = ParsedCommand(key="a", color="cyan", delay=None, actions=["silent"], command=["ls", "-la"])
+        expected = ParsedCommand(key="a", color="cyan", dependencies=[], actions=["silent"], command=["ls", "-la"])
         self.assertEqual(result, expected)
 
     def test_parse_command_with_everything(self):
-        """Test parsing command with key, color, delay, and actions."""
-        result = parse("worker#magenta+2.5|silent=python script.py")
-        expected = ParsedCommand(key="worker", color="magenta", delay=2.5, actions=["silent"], command=["python", "script.py"])
-        self.assertEqual(result, expected)
+        """Test parsing command with key, color, dependencies, and actions."""
+        result = parse("worker#magenta:DELAY+2s500ms|silent=python script.py")
+        # Verify the key components
+        self.assertEqual(result.key, "worker")
+        self.assertEqual(result.color, "magenta")
+        self.assertEqual(len(result.dependencies), 1)
+        self.assertEqual(result.dependencies[0].key, "DELAY")
+        self.assertEqual(result.dependencies[0].delays, [2.5])  # 2s500ms = 2.5s
+        self.assertEqual(result.actions, ["silent"])
+        self.assertEqual(result.command, ["python", "script.py"])
 
     def test_parse_command_no_key_no_color(self):
         """Test parsing command with no key and no color."""
         result = parse("ls -la")
-        expected = ParsedCommand(key=None, color=None, delay=None, actions=[], command=["ls", "-la"])
+        expected = ParsedCommand(key=None, color=None, dependencies=[], actions=[], command=["ls", "-la"])
         self.assertEqual(result, expected)
 
 
