@@ -6,6 +6,8 @@
       \/                   |__|             \/      \/
 ```
 
+[![CI](https://github.com/sst/multiplex/actions/workflows/ci.yml/badge.svg)](https://github.com/sst/multiplex/actions/workflows/ci.yml)
+
 **Multiplex** is a command-line multiplexer along with a simple Python
 API to run multiple processes in parallel and stop them all at once, or
 based on some condition.

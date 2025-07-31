@@ -1393,6 +1393,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 		default=False,
 		help="Outputs the parsed command",
 	)
+
 	def custom_parse_time_arg(argv):
 		"""Custom parser to handle --time and --time=relative properly"""
 		time_mode = None
