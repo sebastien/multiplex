@@ -76,6 +76,8 @@ help:
 	@echo "  test-process-start - Run process start dependency tests only"
 	@echo "  test-redirects - Run redirect parsing tests only"
 	@echo "  test-redirects-runtime - Run redirect runtime tests only"
+	@echo "  test-parallel  - Run parallel execution tests only"
+	@echo "  test-timestamp - Run timestamp tests only"
 	@echo "  test-examples  - Test dependency functionality with examples"
 	@echo "  check          - Run all code quality checks"
 	@echo "  check-bandit   - Run security audit with bandit"
@@ -124,6 +126,12 @@ test:
 	@echo "Running redirect runtime tests..."
 	@$(PYTHON) tests/test-redirects-runtime.py
 	@echo ""
+	@echo "Running parallel execution tests..."
+	@$(PYTHON) tests/test-parallel-execution.py
+	@echo ""
+	@echo "Running timestamp tests..."
+	@$(PYTHON) tests/test-timestamp.py
+	@echo ""
 	@echo "✅ All tests completed successfully!"
 
 .PHONY: test-unit
@@ -160,6 +168,16 @@ test-redirects:
 test-redirects-runtime:
 	@echo "=== Running redirect runtime tests ==="
 	@$(PYTHON) tests/test-redirects-runtime.py
+
+.PHONY: test-parallel
+test-parallel:
+	@echo "=== Running parallel execution tests ==="
+	@$(PYTHON) tests/test-parallel-execution.py
+
+.PHONY: test-timestamp
+test-timestamp:
+	@echo "=== Running timestamp tests ==="
+	@$(PYTHON) tests/test-timestamp.py
 
 .PHONY: test-examples
 test-examples:
