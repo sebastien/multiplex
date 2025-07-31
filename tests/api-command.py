@@ -16,24 +16,24 @@ expected_requests = 10_000
 
 
 def parse_request(source: Command, data: bytes):
-    """Whenever a request happens, we increase the counter and terminate once
-    we've met the counter."""
-    global count
-    count += 1
-    if count % 500 == 0:
-        print(f"Requests performed: {count}, {100 * count/expected_requests}%")
-    if count >= expected_requests:
-        terminate()
+	"""Whenever a request happens, we increase the counter and terminate once
+	we've met the counter."""
+	global count
+	count += 1
+	if count % 500 == 0:
+		print(f"Requests performed: {count}, {100 * count / expected_requests}%")
+	if count >= expected_requests:
+		terminate()
 
 
 def parse_cpu(source: Command, data: bytes):
-    """Parses the CPU and MEM consumption as fed by `top`."""
-    match = bytes(f"{server.pid}", "utf8")
-    lines = [_ for _ in strip_ansi_bytes(data).split(b"\n") if match in _]
-    stats = re.split(r"\s+", str(lines[-1], "utf8"))[1:-1] if lines else None
-    if stats:
-        pid, user, pr, ni, virt, res, shr, s, cpu, mem = stats[0:10]
-        print(f"CPU:{cpu} MEM:{mem}")
+	"""Parses the CPU and MEM consumption as fed by `top`."""
+	match = bytes(f"{server.pid}", "utf8")
+	lines = [_ for _ in strip_ansi_bytes(data).split(b"\n") if match in _]
+	stats = re.split(r"\s+", str(lines[-1], "utf8"))[1:-1] if lines else None
+	if stats:
+		pid, user, pr, ni, virt, res, shr, s, cpu, mem = stats[0:10]
+		print(f"CPU:{cpu} MEM:{mem}")
 
 
 server = run("python3", "-m", "http.server", onErr=parse_request)

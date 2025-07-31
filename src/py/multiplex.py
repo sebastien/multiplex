@@ -140,7 +140,9 @@ class Proc:
 				return False
 
 	@staticmethod
-	def kill(pid: int, sig: signal.Signals = signal.SIGTERM, use_group: bool = True) -> bool:
+	def kill(
+		pid: int, sig: signal.Signals = signal.SIGTERM, use_group: bool = True
+	) -> bool:
 		"""Kill a process and optionally its process group"""
 		try:
 			if use_group:
@@ -226,7 +228,13 @@ class Proc:
 class Command:
 	"""Represents a system command"""
 
-	def __init__(self, args: list[str], key: str, color: str | None = None, pid: int | None = None) -> None:
+	def __init__(
+		self,
+		args: list[str],
+		key: str,
+		color: str | None = None,
+		pid: int | None = None,
+	) -> None:
 		self.key: str = key
 		self.color: str | None = color
 		self.args: list[str] = args
@@ -289,7 +297,7 @@ class Formatter:
 		"err": "!",
 		"end": "=",
 	}
-	
+
 	# ANSI color codes for named colors
 	COLORS = {
 		"black": "30",
@@ -323,21 +331,21 @@ class Formatter:
 		"""Convert color name or hex code to ANSI escape sequence"""
 		if not color:
 			return ""
-		
+
 		color_lower = color.lower()
-		
+
 		# Check if it's a named color
 		if color_lower in self.COLORS:
 			return f"\033[{self.COLORS[color_lower]}m"
-		
+
 		# Check if it's a hex color (6 digits)
 		if len(color) == 6 and all(c in "0123456789abcdefABCDEF" for c in color):
 			# Convert hex to RGB
 			r = int(color[0:2], 16)
-			g = int(color[2:4], 16) 
+			g = int(color[2:4], 16)
 			b = int(color[4:6], 16)
 			return f"\033[38;2;{r};{g};{b}m"
-		
+
 		# Invalid color, return empty string
 		return ""
 
@@ -345,17 +353,20 @@ class Formatter:
 		"""Apply color to text and return as bytes"""
 		if not color:
 			return bytes(text, "utf8")
-		
+
 		color_code = self._get_color_code(color)
 		if color_code:
 			reset_code = "\033[0m"
 			return bytes(f"{color_code}{text}{reset_code}", "utf8")
-		
+
 		return bytes(text, "utf8")
 
 	def start(self, command: Command) -> None:
 		return self.format(
-			"start", command.key, bytes(" ".join(str(_) for _ in command.args), "utf8"), color=command.color
+			"start",
+			command.key,
+			bytes(" ".join(str(_) for _ in command.args), "utf8"),
+			color=command.color,
 		)
 
 	def out(self, command: Command, data: bytes) -> None:
@@ -367,7 +378,14 @@ class Formatter:
 	def end(self, command: Command, data: int) -> None:
 		return self.format("end", command.key, data, self.SEP, command.color)
 
-	def format(self, stream: str, key: str, data: int | bytes, sep: str = SEP, color: str | None = None) -> None:
+	def format(
+		self,
+		stream: str,
+		key: str,
+		data: int | bytes,
+		sep: str = SEP,
+		color: str | None = None,
+	) -> None:
 		colored_key = self._apply_color(key, color)
 		stream_prefix = bytes(f"{self.STREAMS[stream]}{sep}", "utf8")
 		sep_suffix = bytes(f"{sep}", "utf8")
@@ -411,10 +429,15 @@ class Runner:
 
 	def __init__(self) -> None:
 		self.commands: dict[str, tuple[Command, Thread]] = {}
-		self.process_started: dict[str, threading.Event] = {}  # Track process start events
+		self.process_started: dict[
+			str, threading.Event
+		] = {}  # Track process start events
+		self.process_outputs: dict[
+			str, dict[int, list[bytes]]
+		] = {}  # Track process outputs by key and stream
 		self.formatter: Formatter = Formatter()
 		self.graceful_timeout: float = 5.0  # Default graceful shutdown timeout
-		self.force_timeout: float = 2.0     # Additional time before SIGKILL
+		self.force_timeout: float = 2.0  # Additional time before SIGKILL
 		self.registerSignals()
 
 	def getActiveCommands(
@@ -491,6 +514,7 @@ class Runner:
 		key: str | None = None,
 		color: str | None = None,
 		dependencies: list[Dependency] | None = None,
+		redirects: Redirect | None = None,
 		actions: list[str] | None = None,
 	) -> Command:
 		key = key or str(len(self.commands))
@@ -501,6 +525,48 @@ class Runner:
 		# Create a start event for this process
 		self.process_started[key] = threading.Event()
 
+		# Initialize output tracking for this process
+		self.process_outputs[key] = {1: [], 2: []}  # stdout and stderr buffers
+
+		# Handle redirects - create stdin pipe if needed
+		stdin_pipe = None
+		if redirects:
+			# Create a pipe for stdin
+			stdin_read_fd, stdin_write_fd = os.pipe()
+			stdin_pipe = stdin_read_fd
+
+			# Start a thread to manage the redirect data flow
+			def redirect_manager() -> None:
+				try:
+					while True:
+						# Collect data from all redirect sources
+						for source in redirects.sources:
+							if source.key in self.process_outputs:
+								output_buffer = self.process_outputs[source.key][
+									source.stream
+								]
+								if output_buffer:
+									# Write all buffered data to stdin pipe
+									data = b"".join(output_buffer)
+									output_buffer.clear()
+									if data:
+										os.write(stdin_write_fd, data)
+
+						# Small delay to avoid busy waiting
+						time.sleep(0.001)
+				except (OSError, BrokenPipeError):
+					# Process has ended or pipe closed
+					pass
+				finally:
+					try:
+						os.close(stdin_write_fd)
+					except OSError:
+						pass
+
+			# Start the redirect manager thread
+			redirect_thread = threading.Thread(target=redirect_manager, daemon=True)
+			redirect_thread.start()
+
 		# Handle dependencies
 		if dependencies:
 			for dep in dependencies:
@@ -510,7 +576,7 @@ class Runner:
 				else:
 					# Wait for process to end
 					self._waitForProcess(dep.key)
-				
+
 				# Apply any delays after dependency
 				for delay in dep.delays:
 					time.sleep(delay)
@@ -520,6 +586,7 @@ class Runner:
 		# pid of the command.
 		process = subprocess.Popen(  # nosec: B603
 			command,
+			stdin=stdin_pipe,
 			stdout=subprocess.PIPE,
 			stderr=subprocess.PIPE,
 			bufsize=0,
@@ -546,6 +613,7 @@ class Runner:
 				lambda data: self.doOut(cmd, data),
 				lambda data: self.doErr(cmd, data),
 				onEnd,
+				key,  # Pass the key for output capture
 			),
 		)
 		thread.start()
@@ -559,6 +627,7 @@ class Runner:
 		out: BytesConsumer | None = None,
 		err: BytesConsumer | None = None,
 		end: Callable[[int], None] | None = None,
+		capture_key: str | None = None,
 	) -> None:
 		"""A low-level, streaming blocking reader that calls back `out` and `err` consumers
 		upon data."""
@@ -576,6 +645,14 @@ class Runner:
 			for fd in select.select(waiting, [], [])[0]:
 				chunk = os.read(fd, 64_000)
 				if chunk:
+					# Capture output for redirects if requested
+					if capture_key and capture_key in self.process_outputs:
+						# Determine which stream this is (stdout=1, stderr=2)
+						if process.stdout and fd == process.stdout.fileno():
+							self.process_outputs[capture_key][1].append(chunk)
+						elif process.stderr and fd == process.stderr.fileno():
+							self.process_outputs[capture_key][2].append(chunk)
+
 					if handler := channels[fd][1]:
 						handler(chunk)
 				else:
@@ -633,76 +710,80 @@ class Runner:
 		self, *commands: Command, graceful: bool = True, timeout: int | None = None
 	) -> bool:
 		"""Terminates given list of commands with optional graceful shutdown.
-		
+
 		Args:
 			*commands: Specific commands to terminate, or all if none specified
 			graceful: If True, try SIGTERM first, then SIGKILL after timeout
 			timeout: Override default timeout for graceful shutdown
-		
+
 		Returns:
 			True if all processes terminated successfully, False otherwise
 		"""
 		# Use provided timeout or defaults
 		grace_timeout = timeout or self.graceful_timeout
 		force_timeout = self.force_timeout
-		
+
 		# We extract the commands and corresponding threads
 		selection = (
 			dict((k, v) for k, v in self.commands.items() if v[0] in commands)
 			if commands
 			else self.commands
 		)
-		
+
 		if not selection:
 			return True
-		
+
 		# Phase 1: Graceful termination with SIGTERM
 		if graceful:
 			started = time.time()
 			killed_processes = set()
-			
+
 			# Send SIGTERM to all processes
 			for cmd, _ in selection.values():
 				all_pids = set([cmd.pid]).union(cmd.children)
 				for pid in all_pids:
 					if pid is not None and pid not in killed_processes:
-						if Proc.exists(pid) and Proc.kill(pid, signal.SIGTERM, use_group=True):
+						if Proc.exists(pid) and Proc.kill(
+							pid, signal.SIGTERM, use_group=True
+						):
 							killed_processes.add(pid)
-			
+
 			# Wait for graceful shutdown
 			while selection and (time.time() - started) < grace_timeout:
 				selection = self.getActiveCommands(selection)
 				if selection:
 					time.sleep(0.1)  # Small sleep to avoid busy waiting
-			
+
 			# If all processes terminated gracefully, we're done
 			if not selection:
 				return True
-		
+
 		# Phase 2: Force termination with SIGKILL
 		started = time.time()
 		iteration = 0
 		killed_processes = set()
-		
+
 		while selection:
 			for cmd, _ in selection.values():
 				all_pids = set([cmd.pid]).union(cmd.children)
 				for pid in all_pids:
 					if pid is not None and pid not in killed_processes:
-						if Proc.exists(pid) and Proc.kill(pid, signal.SIGKILL, use_group=True):
+						if Proc.exists(pid) and Proc.kill(
+							pid, signal.SIGKILL, use_group=True
+						):
 							killed_processes.add(pid)
-			
+
 			iteration += 1
 			# We exit after the force timeout
 			elapsed = time.time() - started
 			if elapsed >= force_timeout:
 				return False
-			
+
 			# Update the number of active threads
 			selection = self.getActiveCommands(selection)
 			if selection:
 				time.sleep(0.1)
-		
+
 		return True
 
 	# --
@@ -727,7 +808,7 @@ class Runner:
 		active_commands = self.getActiveCommands(None)
 		if not active_commands:
 			return
-			
+
 		for cmd, _ in active_commands.values():
 			if cmd.pid:
 				# Get all child processes
@@ -745,20 +826,20 @@ class Runner:
 		signame = next((k for k, v in self.SIGNALS.items() if v == signum), None)
 		if signame in ("SIGINT", "SIGTERM", "SIGHUP"):
 			print(f"\nReceived {signame}, gracefully shutting down processes...")
-			
+
 			# First, propagate the signal to children
 			self.propagateSignal(signum)
-			
+
 			# Then attempt graceful termination
 			if not self.terminate(graceful=True):
 				print("Graceful shutdown failed, forcing termination...")
 				self.terminate(graceful=False)
-			
+
 			# Wait for processes to actually terminate
 			remaining = self.join(timeout=int(self.force_timeout))
 			if remaining:
 				print(f"Warning: {len(remaining)} processes did not terminate cleanly")
-			
+
 			# Exit gracefully after termination
 			sys.exit(0)
 		elif signame == "SIGCHLD":
@@ -806,16 +887,29 @@ def strip_ansi(data: str) -> str:
 
 
 RE_LINE = re.compile(
-	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(?P<deps>:[^|=]+?)?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
+	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(?P<redirects><[^:=|]+?)?(?P<deps>:[^|=]+?)?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
 )
 
 
 class Dependency(NamedTuple):
 	"""Data structure holding a parsed dependency."""
-	
+
 	key: str  # Process name to wait for
 	wait_for_start: bool  # True if waiting for start (&), False for end
 	delays: list[float]  # List of delays to apply after dependency
+
+
+class RedirectSource(NamedTuple):
+	"""Data structure holding a single redirect source."""
+
+	key: str  # Process name to redirect from
+	stream: int  # Stream number: 1=stdout, 2=stderr
+
+
+class Redirect(NamedTuple):
+	"""Data structure holding a parsed stdin redirect."""
+
+	sources: list[RedirectSource]  # List of sources to combine for stdin
 
 
 class ParsedCommand(NamedTuple):
@@ -824,6 +918,7 @@ class ParsedCommand(NamedTuple):
 	key: str
 	color: str | None
 	dependencies: list[Dependency]  # List of dependencies to wait for
+	redirects: Redirect | None  # Stdin redirect configuration
 	actions: list[str]
 	command: list[str]
 
@@ -853,112 +948,190 @@ def splitargs(command: str) -> Iterable[str]:
 		yield command[o:]
 
 
+def parse_redirects(redirects_str: str) -> Redirect | None:
+	"""Parse redirect string into Redirect object.
+
+	Redirects are in the format: <SOURCE... where SOURCE can be:
+	- A - stdout from process A
+	- 2A - stderr from process A
+	- (1A,2A) - stdout and stderr from process A combined
+	- (A,B) - stdout from processes A and B combined
+
+	Examples:
+	- "<A" - stdin from A's stdout
+	- "<2A" - stdin from A's stderr
+	- "<(1A,2A)" - stdin from A's stdout and stderr combined
+	- "<(A,B)" - stdin from A's and B's stdout combined
+	"""
+	if not redirects_str or not redirects_str.startswith("<"):
+		return None
+
+	# Remove leading '<'
+	sources_str = redirects_str[1:]
+
+	sources = []
+
+	# Handle parentheses format: (1A,2A) or (A,B)
+	if sources_str.startswith("(") and sources_str.endswith(")"):
+		# Remove parentheses and split by commas
+		inner = sources_str[1:-1]
+		source_parts = [s.strip() for s in inner.split(",")]
+
+		for source_part in source_parts:
+			if not source_part:
+				continue
+
+			# Check if it starts with a stream number
+			if source_part.startswith("1"):
+				# 1A format - explicit stdout
+				key = source_part[1:]
+				stream = 1
+			elif source_part.startswith("2"):
+				# 2A format - stderr
+				key = source_part[1:]
+				stream = 2
+			else:
+				# A format - default to stdout
+				key = source_part
+				stream = 1
+
+			if key:
+				sources.append(RedirectSource(key, stream))
+
+	else:
+		# Simple format: A, 2A, 1A
+		if sources_str.startswith("2"):
+			# 2A format - stderr
+			key = sources_str[1:]
+			stream = 2
+		elif sources_str.startswith("1"):
+			# 1A format - explicit stdout
+			key = sources_str[1:]
+			stream = 1
+		else:
+			# A format - default to stdout
+			key = sources_str
+			stream = 1
+
+		if key:
+			sources.append(RedirectSource(key, stream))
+
+	if sources:
+		return Redirect(sources)
+
+	return None
+
+
 def parse_dependencies(deps_str: str) -> list[Dependency]:
 	"""Parse dependency string into list of Dependency objects.
-	
+
 	Dependencies are in the format: :KEY[&][+DELAY...]:KEY2[&][+DELAY...]...
-	
+
 	Examples:
 	- ":A" - wait for process A to end
-	- ":A&" - wait for process A to start  
+	- ":A&" - wait for process A to start
 	- ":A+1s" - wait for process A to end, then wait 1 second
 	- ":A&+500ms" - wait for process A to start, then wait 500ms
 	- ":A+1s+500ms" - wait for process A to end, then wait 1.5 seconds total
 	- ":A:B&+2s" - wait for A to end, and wait for B to start then 2s
 	"""
-	if not deps_str or not deps_str.startswith(':'):
+	if not deps_str or not deps_str.startswith(":"):
 		return []
-	
+
 	# Remove leading colon and split by colons to get individual dependencies
 	deps_str = deps_str[1:]  # Remove leading ':'
-	dep_parts = deps_str.split(':')
-	
+	dep_parts = deps_str.split(":")
+
 	dependencies = []
 	for dep_part in dep_parts:
 		if not dep_part.strip():
 			continue
-			
+
 		# Check for & (wait for start)
 		wait_for_start = False
-		if '&' in dep_part:
-			parts = dep_part.split('&', 1)
+		if "&" in dep_part:
+			parts = dep_part.split("&", 1)
 			key = parts[0]
 			wait_for_start = True
 			delay_part = parts[1] if len(parts) > 1 else ""
 		else:
 			# Split by + to separate key from delays
-			plus_pos = dep_part.find('+')
+			plus_pos = dep_part.find("+")
 			if plus_pos != -1:
 				key = dep_part[:plus_pos]
 				delay_part = dep_part[plus_pos:]
 			else:
 				key = dep_part
 				delay_part = ""
-		
+
 		# Parse delays
 		delays = []
 		if delay_part:
 			# Split by + and parse each delay
-			delay_strs = [d for d in delay_part.split('+') if d.strip()]
+			delay_strs = [d for d in delay_part.split("+") if d.strip()]
 			for delay_str in delay_strs:
 				try:
 					parsed_delay = parse_delay(delay_str)
 					if isinstance(parsed_delay, (int, float)):
 						delays.append(float(parsed_delay))
-				except:
+				except ValueError:  # nosec B110
 					# Skip invalid delays
 					pass
-		
+
 		if key.strip():
 			dependencies.append(Dependency(key.strip(), wait_for_start, delays))
-	
+
 	return dependencies
 
 
-RE_DELAY=re.compile(r'^(?:(?P<minutes>\d+(?:\.\d+)?)m)?(?:(?P<seconds>\d+(?:\.\d+)?)s)?(?:(?P<milliseconds>\d+(?:\.\d+)?)ms)?$|^(?P<default>\d+(?:\.\d*)?)$')
+RE_DELAY = re.compile(
+	r"^(?:(?P<minutes>\d+(?:\.\d+)?)m)?(?:(?P<seconds>\d+(?:\.\d+)?)s)?(?:(?P<milliseconds>\d+(?:\.\d+)?)ms)?$|^(?P<default>\d+(?:\.\d*)?)$"
+)
+
+
 def parse_delay(delay_str: str) -> float | str:
 	"""Parse a delay string with optional time suffixes.
-	
+
 	Supported formats:
 	- Plain number: "5", "1.5", "1.0"
-	- Milliseconds: "500ms", "1000ms" 
+	- Milliseconds: "500ms", "1000ms"
 	- Seconds: "5s", "1.5s"
 	- Minutes: "1m", "2.5m"
 	- Complex combinations: "1m30s", "1m1s1ms", "2m15s500ms"
 	- Named delay: "A", "server"
-	
+
 	Returns delay in seconds as float, or the original string for named delays.
 	"""
 	delay_str = delay_str.strip()
-	
+
 	# Try to match the new regex pattern
 	match = re.match(RE_DELAY, delay_str)
 	if match:
 		# Check if it's a default number (plain numeric value)
-		default = match.group('default')
+		default = match.group("default")
 		if default:
 			return float(default)
-		
+
 		# Parse time components
 		total_seconds = 0.0
-		
+
 		# Minutes
-		minutes = match.group('minutes')
+		minutes = match.group("minutes")
 		if minutes:
 			total_seconds += float(minutes) * 60.0
-		
-		# Seconds  
-		seconds = match.group('seconds')
+
+		# Seconds
+		seconds = match.group("seconds")
 		if seconds:
 			total_seconds += float(seconds)
-		
+
 		# Milliseconds
-		milliseconds = match.group('milliseconds')
+		milliseconds = match.group("milliseconds")
 		if milliseconds:
 			total_seconds += float(milliseconds) / 1000.0
-		
+
 		return total_seconds
-	
+
 	# If regex doesn't match, try parsing as named delay
 	try:
 		# Final fallback: try parsing as plain number
@@ -970,24 +1143,31 @@ def parse_delay(delay_str: str) -> float | str:
 
 def parse(line: str) -> ParsedCommand:
 	"""Parses a command line with the new dependency-based format.
-	
-	Format: [KEY][#COLOR][:DEP…][|ACTION…]=COMMAND
+
+	Format: [KEY][#COLOR][<REDIRECT…][:DEP…][|ACTION…]=COMMAND
 	Where DEP is: [KEY][&][+DELAY…]
+	Where REDIRECT is: <A, <2A, <(1A,2A), <(A,B), etc.
 	"""
 	match = RE_LINE.match(line)
 	if not match:
 		raise SyntaxError(f"Could not parse command: {line}")
-	
+
 	key = match.group("key")
 	color = match.group("color")
+	redirects_str = match.group("redirects")
 	deps_str = match.group("deps")
 	command = match.group("command")
 	actions = (match.group("action") or "").split("|")[1:]
 
+	# Parse redirects
+	redirects = parse_redirects(redirects_str or "")
+
 	# Parse dependencies
 	dependencies = parse_dependencies(deps_str or "")
 
-	return ParsedCommand(key, color, dependencies, actions, [_ for _ in splitargs(command)])
+	return ParsedCommand(
+		key, color, dependencies, redirects, actions, [_ for _ in splitargs(command)]
+	)
 
 
 def cli(argv: list[str] | str = sys.argv[1:]) -> None:
@@ -1038,20 +1218,28 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 	out = open(out_path, "wt") if out_path else sys.stdout
 	if args.parse:
 		for command in args.commands:
-			key, color, dependencies, actions, cmd = parse(command)
+			parsed_cmd = parse(command)
 			out.write(f"Parsed: {command}\n")
-			out.write(f"- key: {key}\n")
-			out.write(f"- color: {color}\n")
-			out.write(f"- dependencies: {dependencies}\n")
-			out.write(f"- actions: {actions}\n")
-			out.write(f"- cmd: {cmd}\n")
+			out.write(f"- key: {parsed_cmd.key}\n")
+			out.write(f"- color: {parsed_cmd.color}\n")
+			out.write(f"- dependencies: {parsed_cmd.dependencies}\n")
+			out.write(f"- redirects: {parsed_cmd.redirects}\n")
+			out.write(f"- actions: {parsed_cmd.actions}\n")
+			out.write(f"- cmd: {parsed_cmd.command}\n")
 	else:
 		runner = Runner()
 		for command in args.commands:
-			# FIXME: This is not correct, should take into consideration the \, etc.
-			key, color, dependencies, actions, cmd = parse(command)
+			# Parse the command using the new format
+			parsed_cmd = parse(command)
 			# FIXME: Dependencies should be sorted and handled properly
-			runner.run(cmd, key=key, color=color, dependencies=dependencies, actions=actions)
+			runner.run(
+				parsed_cmd.command,
+				key=parsed_cmd.key,
+				color=parsed_cmd.color,
+				dependencies=parsed_cmd.dependencies,
+				redirects=parsed_cmd.redirects,
+				actions=parsed_cmd.actions,
+			)
 		if args.timeout:
 			runner.join(timeout=args.timeout)
 			runner.terminate()

@@ -74,6 +74,8 @@ help:
 	@echo "  test-dependencies - Run dependency tests only"
 	@echo "  test-dependency-delays - Run dependency delay tests only"
 	@echo "  test-process-start - Run process start dependency tests only"
+	@echo "  test-redirects - Run redirect parsing tests only"
+	@echo "  test-redirects-runtime - Run redirect runtime tests only"
 	@echo "  test-examples  - Test dependency functionality with examples"
 	@echo "  check          - Run all code quality checks"
 	@echo "  check-bandit   - Run security audit with bandit"
@@ -116,6 +118,12 @@ test:
 	@echo "Running process start dependency tests..."
 	@$(PYTHON) tests/test-process-start-dependency.py
 	@echo ""
+	@echo "Running redirect parsing tests..."
+	@$(PYTHON) tests/test-redirects.py
+	@echo ""
+	@echo "Running redirect runtime tests..."
+	@$(PYTHON) tests/test-redirects-runtime.py
+	@echo ""
 	@echo "✅ All tests completed successfully!"
 
 .PHONY: test-unit
@@ -142,6 +150,16 @@ test-dependency-delays:
 test-process-start:
 	@echo "=== Running process start dependency tests ==="
 	@$(PYTHON) tests/test-process-start-dependency.py
+
+.PHONY: test-redirects
+test-redirects:
+	@echo "=== Running redirect parsing tests ==="
+	@$(PYTHON) tests/test-redirects.py
+
+.PHONY: test-redirects-runtime
+test-redirects-runtime:
+	@echo "=== Running redirect runtime tests ==="
+	@$(PYTHON) tests/test-redirects-runtime.py
 
 .PHONY: test-examples
 test-examples:

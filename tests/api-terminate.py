@@ -7,6 +7,7 @@ import time
 
 count = 0
 
+
 def on_date(command, data):
 	global count
 	print(f">|{command.key} Iteration {count}")

@@ -15,8 +15,7 @@ PID = None
 
 def run():
 	global PID
-	process = Popen(["watch", "-n1", "date"],
-					stdout=PIPE, stderr=PIPE, bufsize=0)
+	process = Popen(["watch", "-n1", "date"], stdout=PIPE, stderr=PIPE, bufsize=0)
 	PID = process.pid
 	channels = [process.stdout.fileno()]
 	while True:

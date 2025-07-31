@@ -45,10 +45,6 @@ that we want to wait for the start of `A` we add an `&`:
 - `A&` means the we wait for `A` to start
 - `A&+10s` means the we wait for `A` to start and then 10s
 
-## Combined delays
-
-Delays can be combined as a sequence `+A+10s`, in which case each event
-is waited for in sequence (here `A` finished and then `10s` after that).
 
 ## Redirects
 
