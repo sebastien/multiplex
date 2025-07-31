@@ -23,7 +23,16 @@ a shell script, or you could write a one liner using `multiplex`.
 Here's how you'd benchmark Python's embedded HTTP server with a
 one-liner using the new dependency format:
 
-    multiplex "SERVER|silent=python -m http.server" ":SERVER&+1s|end=ab -n1000 http://localhost:8000/"
+```
+multiplex "SERVER|silent=python -m http.server" ":SERVER&+1s|end=ab -n1000 http://localhost:8000/"
+```
+
+Multiplex is designed to be run as a CLI tool, without the need of a
+configuration file -- pass in arguments to define the behaviour that you want.
+
+Compared to other tools like *foreman* or *overmind*, multiplex offers a compact
+expressive syntax to define the orchestration of your processes, and a full
+Python API if you want to have more advanced use cases.
 
 # Installing
 
@@ -70,7 +79,7 @@ Running multiple commands with complex coordination:
 
 ## Command Syntax
 
-Commands follow a structured format: `[KEY][#COLOR][:DEP…][|ACTIONS]=COMMAND`
+Commands follow a structured format: `[KEY][#COLOR][+DELAY…][:DEP…][|ACTIONS]=COMMAND`
 
 ### Naming (`KEY=`)
 - **Purpose**: Assign a name to a process for reference by other commands
@@ -89,6 +98,16 @@ Commands follow a structured format: `[KEY][#COLOR][:DEP…][|ACTIONS]=COMMAND`
   - `db#blue=mongod --port 27017`
   - `worker#00FF00=python worker.py`
   - `logs#FFA500=tail -f app.log`
+
+### Start Delays (`+DELAY`)
+- **Purpose**: Delay the start of a command by a specified time
+- **Format**: `+DELAY` where DELAY can be a number (seconds) or include time units
+- **Time units**: `ms` (milliseconds), `s` (seconds), `m` (minutes) - units are optional, defaults to seconds
+- **Examples**:
+  - `+2=command` - start after 2 seconds
+  - `API+1.5=command` - start API after 1.5 seconds
+  - `#blue+500ms=command` - start with blue color after 500 milliseconds
+  - `WORKER#green+2:DB=command` - start WORKER (green) after 2 seconds, then wait for DB
 
 ### Dependencies (`:DEP`)
 Dependencies allow commands to wait for other processes and apply delays.
@@ -139,6 +158,16 @@ Actions can be combined: `|silent|end=command`
 **Sequential execution:**
 ```bash
 multiplex "BUILD=npm run build" ":BUILD=npm start"
+```
+
+**Parallel with start delays:**
+```bash
+multiplex "DB=database" "API+2=api-server" "UI+3=ui-server"
+```
+
+**Mixed start delays and dependencies:**
+```bash
+multiplex "DB+1=database" "API+2:DB=api-server" "UI+0.5:API&=ui-server"
 ```
 
 **Parallel with coordination:**
@@ -195,6 +224,12 @@ multiplex "STEP1=echo 'init'" "STEP2:STEP1=echo 'process'" ":STEP2=echo 'done'"
 Demonstrates chaining processes where each waits for the previous to complete.
 
 ## Real-world Scenarios
+
+**Development environment with start delays:**
+```bash
+multiplex "DB#blue+1=mongod" "API#green+3:DB=node server.js" "UI#cyan+5:API&=npm run dev" "BROWSER+7:UI&=open http://localhost:3000"
+```
+Demonstrates start delays combined with dependencies - DB starts after 1s, API starts after 3s AND waits for DB, UI starts after 5s AND waits for API to start, browser opens after 7s AND waits for UI to start.
 
 **Development environment with dependencies:**
 ```bash
@@ -268,7 +303,12 @@ bash examples/http-benchmark.sh
 
 Each example includes descriptive output explaining what's happening during execution.
 
-## Similar tools
+## Related tools
 
 - [foreman](https://github.com/ddollar/foreman) and [honcho](https://github.com/nickstenning/honcho)
-  offer similar features.
+  allows to start and manage processes defined in a `Procfile`. Compared to foreman,
+  multiplex can be run from the CLI directly without a supporting file and offers
+  more flexibility in orchestrating the processes.
+
+- [mprocs](https://github.com/pvolok/mprocs) runs multiple processes in parallel, and provides
+  a TUI to navigate between each.

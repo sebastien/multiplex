@@ -241,6 +241,7 @@ class Command:
 		self.pid: int | None = pid
 		self.pgid: int | None = None  # Process group ID
 		self._children: set[int] = set()
+		self.redirect_stop_event: threading.Event | None = None  # For stopping redirect threads
 		# Callbacks
 		self.onStart: list[StartCallback | None] = []
 		self.onOut: list[OutCallback | None] = []
@@ -478,6 +479,10 @@ class Runner:
 					_(command, data)
 
 	def doEnd(self, command: Command, data: int) -> None:
+		# Signal redirect threads to stop for this command
+		if hasattr(command, 'redirect_stop_event') and command.redirect_stop_event:
+			command.redirect_stop_event.set()
+		
 		if not command.onEnd:
 			self.formatter.end(command, data)
 		else:
@@ -513,6 +518,7 @@ class Runner:
 		command: list[str],
 		key: str | None = None,
 		color: str | None = None,
+		start_delay: float = 0.0,
 		dependencies: list[Dependency] | None = None,
 		redirects: Redirect | None = None,
 		actions: list[str] | None = None,
@@ -535,11 +541,15 @@ class Runner:
 			stdin_read_fd, stdin_write_fd = os.pipe()
 			stdin_pipe = stdin_read_fd
 
+			# Create a stop event for the redirect manager
+			redirect_stop_event = threading.Event()
+
 			# Start a thread to manage the redirect data flow
 			def redirect_manager() -> None:
 				try:
-					while True:
+					while not redirect_stop_event.is_set():
 						# Collect data from all redirect sources
+						data_written = False
 						for source in redirects.sources:
 							if source.key in self.process_outputs:
 								output_buffer = self.process_outputs[source.key][
@@ -550,7 +560,12 @@ class Runner:
 									data = b"".join(output_buffer)
 									output_buffer.clear()
 									if data:
-										os.write(stdin_write_fd, data)
+										try:
+											os.write(stdin_write_fd, data)
+											data_written = True
+										except (OSError, BrokenPipeError):
+											# Pipe closed, stop redirecting
+											return
 
 						# Small delay to avoid busy waiting
 						time.sleep(0.001)
@@ -567,6 +582,9 @@ class Runner:
 			redirect_thread = threading.Thread(target=redirect_manager, daemon=True)
 			redirect_thread.start()
 
+			# Store the stop event so we can signal it when this command ends
+			cmd.redirect_stop_event = redirect_stop_event
+
 		# Handle dependencies
 		if dependencies:
 			for dep in dependencies:
@@ -580,6 +598,10 @@ class Runner:
 				# Apply any delays after dependency
 				for delay in dep.delays:
 					time.sleep(delay)
+
+		# Apply start delay
+		if start_delay > 0:
+			time.sleep(start_delay)
 
 		# NOTE: If the start_new_session attribute is set to true, then
 		# all the child processes will belong to the process group with the
@@ -887,7 +909,7 @@ def strip_ansi(data: str) -> str:
 
 
 RE_LINE = re.compile(
-	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(?P<redirects><[^:=|]+?)?(?P<deps>:[^|=]+?)?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
+	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(?P<start_delay>\+[^:=|<]+?)?(?P<redirects><[^:=|]+?)?(?P<deps>:[^|=]+?)?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
 )
 
 
@@ -917,6 +939,7 @@ class ParsedCommand(NamedTuple):
 
 	key: str
 	color: str | None
+	start_delay: float  # Delay before starting this command
 	dependencies: list[Dependency]  # List of dependencies to wait for
 	redirects: Redirect | None  # Stdin redirect configuration
 	actions: list[str]
@@ -1142,9 +1165,9 @@ def parse_delay(delay_str: str) -> float | str:
 
 
 def parse(line: str) -> ParsedCommand:
-	"""Parses a command line with the new dependency-based format.
+	"""Parses a command line with the new delay and dependency-based format.
 
-	Format: [KEY][#COLOR][<REDIRECT…][:DEP…][|ACTION…]=COMMAND
+	Format: [KEY][#COLOR][+DELAY…][:DEP…][|ACTION…]=COMMAND
 	Where DEP is: [KEY][&][+DELAY…]
 	Where REDIRECT is: <A, <2A, <(1A,2A), <(A,B), etc.
 	"""
@@ -1154,10 +1177,20 @@ def parse(line: str) -> ParsedCommand:
 
 	key = match.group("key")
 	color = match.group("color")
+	start_delay_str = match.group("start_delay")
 	redirects_str = match.group("redirects")
 	deps_str = match.group("deps")
 	command = match.group("command")
 	actions = (match.group("action") or "").split("|")[1:]
+
+	# Parse start delay
+	start_delay = 0.0
+	if start_delay_str:
+		# Remove the '+' prefix and parse
+		delay_value = parse_delay(start_delay_str[1:])
+		if isinstance(delay_value, str):
+			raise SyntaxError(f"Start delay must be a time value, not a named delay: {start_delay_str}")
+		start_delay = delay_value
 
 	# Parse redirects
 	redirects = parse_redirects(redirects_str or "")
@@ -1166,7 +1199,7 @@ def parse(line: str) -> ParsedCommand:
 	dependencies = parse_dependencies(deps_str or "")
 
 	return ParsedCommand(
-		key, color, dependencies, redirects, actions, [_ for _ in splitargs(command)]
+		key, color, start_delay, dependencies, redirects, actions, [_ for _ in splitargs(command)]
 	)
 
 
@@ -1222,6 +1255,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 			out.write(f"Parsed: {command}\n")
 			out.write(f"- key: {parsed_cmd.key}\n")
 			out.write(f"- color: {parsed_cmd.color}\n")
+			out.write(f"- start_delay: {parsed_cmd.start_delay}\n")
 			out.write(f"- dependencies: {parsed_cmd.dependencies}\n")
 			out.write(f"- redirects: {parsed_cmd.redirects}\n")
 			out.write(f"- actions: {parsed_cmd.actions}\n")
@@ -1236,6 +1270,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 				parsed_cmd.command,
 				key=parsed_cmd.key,
 				color=parsed_cmd.color,
+				start_delay=parsed_cmd.start_delay,
 				dependencies=parsed_cmd.dependencies,
 				redirects=parsed_cmd.redirects,
 				actions=parsed_cmd.actions,

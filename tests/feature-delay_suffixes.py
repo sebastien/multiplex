@@ -19,7 +19,7 @@ from multiplex import parse, ParsedCommand, parse_delay
 def test_millisecond_suffix():
 	"""Test parsing delay with millisecond suffix"""
 	result = parse("+500ms=echo test")
-	expected = ParsedCommand(None, None, 0.5, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 0.5, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Millisecond suffix parsing")
 
@@ -27,7 +27,7 @@ def test_millisecond_suffix():
 def test_second_suffix():
 	"""Test parsing delay with second suffix"""
 	result = parse("+5s=echo test")
-	expected = ParsedCommand(None, None, 5.0, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 5.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Second suffix parsing")
 
@@ -35,7 +35,7 @@ def test_second_suffix():
 def test_minute_suffix():
 	"""Test parsing delay with minute suffix"""
 	result = parse("+2m=echo test")
-	expected = ParsedCommand(None, None, 120.0, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 120.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Minute suffix parsing")
 
@@ -43,7 +43,7 @@ def test_minute_suffix():
 def test_minute_second_combination():
 	"""Test parsing delay with minute+second combination"""
 	result = parse("+1m30s=echo test")
-	expected = ParsedCommand(None, None, 90.0, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 90.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Minute+second combination parsing")
 
@@ -51,7 +51,7 @@ def test_minute_second_combination():
 def test_complex_minute_second_combination():
 	"""Test parsing delay with complex minute+second combination"""
 	result = parse("+2m15s=echo test")
-	expected = ParsedCommand(None, None, 135.0, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 135.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Complex minute+second combination parsing")
 
@@ -59,7 +59,7 @@ def test_complex_minute_second_combination():
 def test_float_milliseconds():
 	"""Test parsing delay with float milliseconds"""
 	result = parse("+1500ms=echo test")
-	expected = ParsedCommand(None, None, 1.5, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 1.5, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Float milliseconds parsing")
 
@@ -67,7 +67,7 @@ def test_float_milliseconds():
 def test_float_seconds():
 	"""Test parsing delay with float seconds"""
 	result = parse("+2.5s=echo test")
-	expected = ParsedCommand(None, None, 2.5, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 2.5, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Float seconds parsing")
 
@@ -75,7 +75,7 @@ def test_float_seconds():
 def test_float_minutes():
 	"""Test parsing delay with float minutes"""
 	result = parse("+1.5m=echo test")
-	expected = ParsedCommand(None, None, 90.0, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 90.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Float minutes parsing")
 
@@ -83,7 +83,7 @@ def test_float_minutes():
 def test_named_delay_with_key():
 	"""Test named delay with key still works"""
 	result = parse("A+2s=echo test")
-	expected = ParsedCommand("A", None, 2.0, [], ["echo", "test"])
+	expected = ParsedCommand("A", None, 2.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Named delay with key parsing")
 
@@ -91,7 +91,7 @@ def test_named_delay_with_key():
 def test_suffix_with_actions():
 	"""Test delay suffix with actions"""
 	result = parse("+1m|silent=echo test")
-	expected = ParsedCommand(None, None, 60.0, ["silent"], ["echo", "test"])
+	expected = ParsedCommand(None, None, 60.0, [], None, ["silent"], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Delay suffix with actions parsing")
 
@@ -100,7 +100,7 @@ def test_complex_combination():
 	"""Test complex combination with key, color, delay suffix, and actions"""
 	result = parse("worker#blue+30s|silent=python script.py")
 	expected = ParsedCommand(
-		"worker", "blue", 30.0, ["silent"], ["python", "script.py"]
+		"worker", "blue", 30.0, [], None, ["silent"], ["python", "script.py"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Complex combination parsing")
@@ -109,7 +109,7 @@ def test_complex_combination():
 def test_complex_combinations():
 	"""Test complex delay combinations with all units"""
 	result = parse("+1m1s1ms=echo test")
-	expected = ParsedCommand(None, None, 61.001, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 61.001, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Complex 1m1s1ms combination parsing")
 
@@ -117,7 +117,7 @@ def test_complex_combinations():
 def test_milliseconds_only():
 	"""Test pure millisecond delays"""
 	result = parse("+250ms=echo test")
-	expected = ParsedCommand(None, None, 0.25, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 0.25, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Pure milliseconds parsing")
 
@@ -125,7 +125,7 @@ def test_milliseconds_only():
 def test_plain_integer():
 	"""Test plain integer without decimal"""
 	result = parse("+5=echo test")
-	expected = ParsedCommand(None, None, 5.0, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 5.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Plain integer parsing")
 
@@ -133,7 +133,7 @@ def test_plain_integer():
 def test_plain_float_with_zero():
 	"""Test plain float with explicit zero decimal"""
 	result = parse("+1.0=echo test")
-	expected = ParsedCommand(None, None, 1.0, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 1.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Plain float with .0 parsing")
 
@@ -141,7 +141,7 @@ def test_plain_float_with_zero():
 def test_seconds_and_milliseconds():
 	"""Test seconds combined with milliseconds"""
 	result = parse("+2s500ms=echo test")
-	expected = ParsedCommand(None, None, 2.5, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 2.5, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Seconds+milliseconds combination parsing")
 
@@ -149,7 +149,7 @@ def test_seconds_and_milliseconds():
 def test_minutes_and_milliseconds():
 	"""Test minutes combined with milliseconds"""
 	result = parse("+1m500ms=echo test")
-	expected = ParsedCommand(None, None, 60.5, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 60.5, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Minutes+milliseconds combination parsing")
 
@@ -157,7 +157,7 @@ def test_minutes_and_milliseconds():
 def test_all_units_maximum():
 	"""Test maximum complexity with all units"""
 	result = parse("+2m30s750ms=echo test")
-	expected = ParsedCommand(None, None, 150.75, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 150.75, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ All units maximum complexity parsing")
 
@@ -189,24 +189,26 @@ def test_parse_delay_function():
 	print("✓ parse_delay function tests (extended)")
 
 
-def test_backward_compatibility():
+def test_start_delay_validation():
 	"""Test that existing delay formats still work"""
 	# Plain numeric delays should still work
 	result = parse("+5=echo test")
-	expected = ParsedCommand(None, None, 5.0, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 5.0, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 
 	# Float delays should still work
 	result = parse("+1.5=echo test")
-	expected = ParsedCommand(None, None, 1.5, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 1.5, [], None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 
-	# Named delays should still work
-	result = parse("+A=echo test")
-	expected = ParsedCommand(None, None, "A", [], ["echo", "test"])
-	assert result == expected, f"Expected {expected}, got {result}"
+	# Named delays for start_delay should raise an error
+	try:
+		result = parse("+A=echo test")
+		assert False, "Should have raised SyntaxError for named start delay"
+	except SyntaxError:
+		pass  # This is expected
 
-	print("✓ Backward compatibility")
+	print("✓ Start delay validation")
 
 
 def run_tests():
@@ -235,7 +237,7 @@ def run_tests():
 	test_all_units_maximum()
 
 	test_parse_delay_function()
-	test_backward_compatibility()
+	test_start_delay_validation()
 
 	print("\n✅ All delay suffix tests passed!")
 

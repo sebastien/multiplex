@@ -15,9 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
 from multiplex import Runner, parse
 
 
+# Use a single runner instance to avoid signal handler conflicts
+runner = Runner()
+
+
 def test_simple_stdout_redirect():
 	"""Test that stdout redirect actually works at runtime"""
-	runner = Runner()
 
 	# Start a process that produces output
 	parsed_a = parse("A=echo 'hello from A'")
@@ -50,10 +53,9 @@ def test_simple_stdout_redirect():
 
 def test_stderr_redirect():
 	"""Test that stderr redirect works at runtime"""
-	runner = Runner()
 
 	# Start a process that produces stderr output using a more portable approach
-	parsed_a = parse("A=python3 -c 'import sys; sys.stderr.write(\"error from A\\n\")'")
+	parsed_a = parse("C=python3 -c 'import sys; sys.stderr.write(\"error from A\\n\")'")
 	cmd_a = runner.run(
 		parsed_a.command,
 		key=parsed_a.key,
@@ -66,10 +68,10 @@ def test_stderr_redirect():
 	time.sleep(0.1)
 
 	# Start a process that consumes A's stderr
-	parsed_b = parse("<2A=cat")
+	parsed_b = parse("<2C=cat")
 	cmd_b = runner.run(
 		parsed_b.command,
-		key="B",
+		key="D",
 		dependencies=parsed_b.dependencies,
 		redirects=parsed_b.redirects,
 		actions=parsed_b.actions,
@@ -83,11 +85,10 @@ def test_stderr_redirect():
 
 def test_combined_streams_redirect():
 	"""Test that combined stdout and stderr redirect works"""
-	runner = Runner()
 
 	# Start a process that produces both stdout and stderr
 	parsed_a = parse(
-		'A=python3 -c \'print("stdout"); import sys; sys.stderr.write("stderr\\n")\''
+		'E=python3 -c \'print("stdout"); import sys; sys.stderr.write("stderr\\n")\''
 	)
 	cmd_a = runner.run(
 		parsed_a.command,
@@ -101,10 +102,10 @@ def test_combined_streams_redirect():
 	time.sleep(0.1)
 
 	# Start a process that consumes both A's stdout and stderr
-	parsed_b = parse("<(1A,2A)=cat")
+	parsed_b = parse("<(1E,2E)=cat")
 	cmd_b = runner.run(
 		parsed_b.command,
-		key="B",
+		key="F",
 		dependencies=parsed_b.dependencies,
 		redirects=parsed_b.redirects,
 		actions=parsed_b.actions,
@@ -124,8 +125,17 @@ if __name__ == "__main__":
 		test_stderr_redirect()
 		test_combined_streams_redirect()
 		print("\n✅ All redirect runtime tests completed!")
+		
+		# Clean shutdown - terminate any remaining processes
+		runner.terminate()
+		
+		# Force exit to avoid hanging on threads
+		import os
+		os._exit(0)
 	except Exception as e:
 		print(f"\n❌ Runtime test failed: {e}")
 		import traceback
 
 		traceback.print_exc()
+		import os
+		os._exit(1)

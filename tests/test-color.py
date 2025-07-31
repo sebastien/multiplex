@@ -19,7 +19,8 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with named color."""
 		result = parse("a#red=ls -la")
 		expected = ParsedCommand(
-			key="a",
+			start_delay=0.0,
+		key="a",
 			color="red",
 			dependencies=[],
 			redirects=None,
@@ -32,7 +33,8 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with hex color."""
 		result = parse("a#00FF00=ls -la")
 		expected = ParsedCommand(
-			key="a",
+			start_delay=0.0,
+		key="a",
 			color="00FF00",
 			dependencies=[],
 			redirects=None,
@@ -45,7 +47,8 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with mixed case hex color."""
 		result = parse("b#AbCdEf=echo hello")
 		expected = ParsedCommand(
-			key="b",
+			start_delay=0.0,
+		key="b",
 			color="AbCdEf",
 			dependencies=[],
 			redirects=None,
@@ -58,7 +61,8 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command without color specification."""
 		result = parse("a=ls -la")
 		expected = ParsedCommand(
-			key="a",
+			start_delay=0.0,
+		key="a",
 			color=None,
 			dependencies=[],
 			redirects=None,
@@ -71,7 +75,8 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with both color and delay (now as dependency)."""
 		result = parse("a#blue:DELAY+5s=ls -la")  # Updated format
 		expected = ParsedCommand(
-			key="a",
+			start_delay=0.0,
+		key="a",
 			color="blue",
 			dependencies=[
 				parse(":DELAY+5s=dummy").dependencies[0]  # Get the dependency structure
@@ -91,7 +96,8 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with color and actions."""
 		result = parse("a#cyan|silent=ls -la")
 		expected = ParsedCommand(
-			key="a",
+			start_delay=0.0,
+		key="a",
 			color="cyan",
 			dependencies=[],
 			redirects=None,
@@ -116,7 +122,8 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with no key and no color."""
 		result = parse("ls -la")
 		expected = ParsedCommand(
-			key=None,
+			start_delay=0.0,
+		key=None,
 			color=None,
 			dependencies=[],
 			redirects=None,

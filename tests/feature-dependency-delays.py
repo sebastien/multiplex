@@ -39,8 +39,7 @@ def test_delay_parsing_compatibility():
 def test_dependency_with_millisecond_delay():
 	"""Test dependency with millisecond delay"""
 	result = parse(":A+500ms=echo test")
-	expected = ParsedCommand(
-		None, None, [Dependency("A", False, [0.5])], None, [], ["echo", "test"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [0.5])], None, [], ["echo", "test"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with millisecond delay")
@@ -49,8 +48,7 @@ def test_dependency_with_millisecond_delay():
 def test_dependency_with_second_delay():
 	"""Test dependency with second delay"""
 	result = parse(":A+5s=echo test")
-	expected = ParsedCommand(
-		None, None, [Dependency("A", False, [5.0])], None, [], ["echo", "test"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [5.0])], None, [], ["echo", "test"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with second delay")
@@ -59,8 +57,7 @@ def test_dependency_with_second_delay():
 def test_dependency_with_minute_delay():
 	"""Test dependency with minute delay"""
 	result = parse(":A+2m=echo test")
-	expected = ParsedCommand(
-		None, None, [Dependency("A", False, [120.0])], None, [], ["echo", "test"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [120.0])], None, [], ["echo", "test"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with minute delay")
@@ -69,8 +66,7 @@ def test_dependency_with_minute_delay():
 def test_dependency_with_complex_delay():
 	"""Test dependency with complex delay combination"""
 	result = parse(":A+1m30s=echo test")
-	expected = ParsedCommand(
-		None, None, [Dependency("A", False, [90.0])], None, [], ["echo", "test"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [90.0])], None, [], ["echo", "test"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with complex delay combination")
@@ -79,8 +75,7 @@ def test_dependency_with_complex_delay():
 def test_dependency_with_multiple_delays():
 	"""Test dependency with multiple separate delays"""
 	result = parse(":A+1s+500ms=echo test")
-	expected = ParsedCommand(
-		None, None, [Dependency("A", False, [1.0, 0.5])], None, [], ["echo", "test"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [1.0, 0.5])], None, [], ["echo", "test"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with multiple delays")
@@ -89,8 +84,7 @@ def test_dependency_with_multiple_delays():
 def test_dependency_with_maximum_complexity():
 	"""Test dependency with maximum complexity timing"""
 	result = parse(":A+2m30s750ms=echo test")
-	expected = ParsedCommand(
-		None, None, [Dependency("A", False, [150.75])], None, [], ["echo", "test"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [150.75])], None, [], ["echo", "test"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with maximum complexity timing")
@@ -99,8 +93,7 @@ def test_dependency_with_maximum_complexity():
 def test_start_dependency_with_delays():
 	"""Test start dependency with delays"""
 	result = parse(":A&+1s+500ms=echo test")
-	expected = ParsedCommand(
-		None, None, [Dependency("A", True, [1.0, 0.5])], None, [], ["echo", "test"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", True, [1.0, 0.5])], None, [], ["echo", "test"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Start dependency with delays")
@@ -109,10 +102,7 @@ def test_start_dependency_with_delays():
 def test_multiple_dependencies_with_delays():
 	"""Test multiple dependencies each with their own delays"""
 	result = parse(":A+1s:B&+500ms:C+2m=echo test")
-	expected = ParsedCommand(
-		None,
-		None,
-		[
+	expected = ParsedCommand(None, None, 0.0, [
 			Dependency("A", False, [1.0]),
 			Dependency("B", True, [0.5]),
 			Dependency("C", False, [120.0]),
@@ -128,10 +118,7 @@ def test_multiple_dependencies_with_delays():
 def test_dependency_delays_with_full_format():
 	"""Test dependency delays with full command format"""
 	result = parse("worker#blue:A+1s:B&+500ms|silent=python script.py")
-	expected = ParsedCommand(
-		"worker",
-		"blue",
-		[Dependency("A", False, [1.0]), Dependency("B", True, [0.5])],
+	expected = ParsedCommand("worker", "blue", 0.0, [Dependency("A", False, [1.0]), Dependency("B", True, [0.5])],
 		None,
 		["silent"],
 		["python", "script.py"],

@@ -3,32 +3,6 @@ Misc:
 
 # Features
 
-## More flexible command format
-
-
-We want to evolve the format from
-
-```
-[KEY][#COLOR][:DEP…][|ACTION…]=COMMAND
-```
-
-to
-
-```
-[KEY][#COLOR][+DELAY…][:DEP…][|ACTION…]=COMMAND
-```
-
-where we introduce an extra optional chainable DELAY just after the KEY
-or COLOR.
-
-This should support these use cases;
-
-- `+2=` starts the current stream after 2s
-- `API+2=` starts the `API` stream after 2s
-- `#blue+2=` starts the current stream (styled in blue) after 2s
-- `API#blue+2=` starts the `API` stream (styled in blue) after 2s
-
-
 ## Condition from process start
 
 By default, a condition like `A` means that we wait for `A` to finish. To denote
@@ -86,3 +60,25 @@ for all other processes:
 - `+A(2)|GUARD` means "wait for `GUARD` to match `A`'s stderr
 - `+A(1,2)|GUARD` means "wait for `GUARD` to match `A`'s stdout and stderr
 
+## Timestamp format
+
+Add the `-t|--timestamp` option that adds a `HH:MM:SS|` prefix to every log
+entry
+
+```
+12:31:20|$│A│echo hello from A
+12:31:20|<│A│hello from A
+12:31:21|=│A│0
+12:31:21|$│B│cat
+12:31:21|<│B│hello from A
+```
+
+And a `-r|-relative` option that then displays the time relative to the start:
+
+```
+00:00:00|$│A│echo hello from A
+00:00:00|<│A│hello from A
+00:00:01|=│A│0
+00:00:01|$│B│cat
+00:00:01|<│B│hello from A
+```
