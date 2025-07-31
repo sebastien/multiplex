@@ -3,38 +3,30 @@ Misc:
 
 # Features
 
-## Optional suffix for delays
+## More flexible command format
 
-Delays can be written with different units for delays:
 
-- `+1ms` for milliseconds
-- `+1s` for seconds
-- `+1m` for minutes
-- `+1m10s` for minutes/seconds
-
-## Upgraded command format
-
-The command format should now be like so
+We want to evolve the format from
 
 ```
 [KEY][#COLOR][:DEP…][|ACTION…]=COMMAND
 ```
 
-where:
-
-- `#COLOR` for a given color, either by name or in hex
-- `:DEP` is a dependency (see below, can be chained)
-- `|ACTION` is an action (can be chained)
-
-Dependencies are in the following form:
+to
 
 ```
-[KEY][&][+DELAY…]
+[KEY][#COLOR][+DELAY…][:DEP…][|ACTION…]=COMMAND
 ```
 
-- `KEY` for the process name we wait on, if it is followed by `&` then it
-  indicates the process start instead of the end.
-- `+DELAY` for a delay (can be chained)
+where we introduce an extra optional chainable DELAY just after the KEY
+or COLOR.
+
+This should support these use cases;
+
+- `+2=` starts the current stream after 2s
+- `API+2=` starts the `API` stream after 2s
+- `#blue+2=` starts the current stream (styled in blue) after 2s
+- `API#blue+2=` starts the `API` stream (styled in blue) after 2s
 
 
 ## Condition from process start

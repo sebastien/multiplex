@@ -32,7 +32,7 @@ python3 ../src/py/multiplex.py --timeout 1 'A=echo "from A"' 'B=echo "from B"' '
 echo ""
 
 echo "5. Complex example with dependencies: A starts, B waits for A to start, C processes both outputs"
-echo "Command: multiplex --timeout 1 'A=echo \"Starting process A\"' ':A&=echo \"B started after A\"' '<(A,B)=sort'"
+echo "Command: multiplex --timeout 1 'A=echo \"Starting process A\"' 'B:A&=echo \"B started after A\"' '<(A,B)=sort'"
 python3 ../src/py/multiplex.py --timeout 1 'A=echo "Starting process A"' 'B:A&=echo "B started after A"' '<(A,B)=sort'
 echo ""
 

@@ -1,3 +1,16 @@
-#!/usr/bin/env sh
-python -m multiplex "$@"
+#!/usr/bin/env bash
+PYTHON=${PYTHON:-}
+if [ -z "$PYTHON" ]; then
+	if command -v python3; then
+		PYTHON=$(which python3)
+	elif command -v python; then
+		PYTHON=$(which python)
+	fi
+fi
+if [ -z "$PYTHON" ]; then
+	echo "-!- ERR Could not find a Python interpreter, set the PYTHON env var"
+	exit 1
+else
+	exec $PYTHON -m multiplex "$@"
+fi
 # EOF

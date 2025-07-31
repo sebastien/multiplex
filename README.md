@@ -1,4 +1,4 @@
-``` 
+```
               .__   __  .__       .__
   _____  __ __|  |_/  |_|__|_____ |  |   ____ ___  ___
  /     \|  |  \  |\   __\  \____ \|  | _/ __ \\  \/  /
@@ -62,11 +62,11 @@ Running a command after 5s delay:
 
 Running a command after another completes:
 
-    multiplex "A=python -m http.server" "+A=ab -n1000 http://localhost:8000/"
+    multiplex "A=python -m http.server" ":A=ab -n1000 http://localhost:8000/"
 
 Running multiple commands with complex coordination:
 
-    multiplex "DB=mongod" "API+2=node server.js" "+API|end=npm test"
+    multiplex "DB=mongod" "API:DB+2=node server.js" ":API|end=npm test"
 
 ## Command Syntax
 
@@ -75,7 +75,7 @@ Commands follow a structured format: `[KEY][#COLOR][:DEP…][|ACTIONS]=COMMAND`
 ### Naming (`KEY=`)
 - **Purpose**: Assign a name to a process for reference by other commands
 - **Format**: `KEY=command` where KEY is alphanumeric (A-Z, a-z, 0-9, _)
-- **Examples**: 
+- **Examples**:
   - `A=python -m http.server`
   - `DB=mongod --port 27017`
   - `API_SERVER=node app.js`
@@ -114,13 +114,15 @@ Each dependency follows: `[KEY][&][+DELAY…]`
   - `:DB:CACHE&+2s:CONFIG` - wait for DB to end, CACHE to start + 2s, and CONFIG to end
 
 #### Delay Formats in Dependencies
-- **Time unit suffixes**: `ms` (milliseconds), `s` (seconds), `m` (minutes)
+- **Time unit suffixes**: `ms` (milliseconds), `s` (seconds), `m` (minutes) - units are optional, defaults to seconds
+- **Plain numbers**: `5`, `1.5`, `0.5` (treated as seconds)
 - **Complex combinations**: `1m30s`, `2s500ms`, `1m1s1ms`
-- **Multiple delays**: `+1s+500ms` (applies 1s delay, then 500ms delay)
+- **Multiple delays**: `+1+0.5` (applies 1s delay, then 0.5s delay)
 - **Examples**:
-  - `:A+500ms` - wait for A, then 500ms
+  - `:A+2` - wait for A, then 2 seconds
+  - `:A+500ms` - wait for A, then 500 milliseconds
   - `:B&+1m30s` - wait for B to start, then 90 seconds
-  - `:C+1s+500ms` - wait for C, then 1s, then 500ms more
+  - `:C+1+0.5` - wait for C, then 1s, then 0.5s more
 
 ### Actions (`|ACTION`)
 Actions modify process behavior:
@@ -141,17 +143,17 @@ multiplex "BUILD=npm run build" ":BUILD=npm start"
 
 **Parallel with coordination:**
 ```bash
-multiplex "DB=mongod" "API:DB+2s=node server.js" ":API&=npm test"
+multiplex "DB=mongod" "API:DB+2=node server.js" ":API&=npm test"
 ```
 
 **Complex dependency chain:**
 ```bash
-multiplex "CONFIG=setup" "DB:CONFIG+1s=database" "CACHE:CONFIG+500ms=redis" "API:DB:CACHE&+2s=server"
+multiplex "CONFIG=setup" "DB:CONFIG+1=database" "CACHE:CONFIG+0.5=redis" "API:DB:CACHE&+2=server"
 ```
 
 **Development environment:**
 ```bash
-multiplex "DB=mongod" "API:DB+2s=npm run dev" "UI:API&+1s=npm run ui" ":UI&+5s=open http://localhost:3000"
+multiplex "DB=mongod" "API:DB+2=npm run dev" "UI:API&+1=npm run ui" ":UI&+5=open http://localhost:3000"
 ```
 
 ### Special Cases
@@ -186,7 +188,7 @@ multiplex "DB=setup-database" "API:DB+1s=start-api" "UI:API&+500ms=start-ui" ":U
 ```
 Shows the new dependency system with end dependencies (:DB), start dependencies (:API&), and delays.
 
-**Process Dependencies (`examples/process-delays.sh`)**  
+**Process Dependencies (`examples/process-delays.sh`)**
 ```bash
 multiplex "STEP1=echo 'init'" "STEP2:STEP1=echo 'process'" ":STEP2=echo 'done'"
 ```
@@ -196,13 +198,13 @@ Demonstrates chaining processes where each waits for the previous to complete.
 
 **Development environment with dependencies:**
 ```bash
-multiplex "DB#blue=mongod" "API#green:DB+2s=node server.js" "UI#cyan:API&+500ms=npm run ui" "logs#FFA500:API&+1s=tail -f app.log"
+multiplex "DB#blue=mongod" "API#green:DB+2=node server.js" "UI#cyan:API&+0.5=npm run ui" "logs#FFA500:API&+1=tail -f app.log"
 ```
 Shows dependency coordination - API waits for DB to complete + 2s, UI waits for API to start + 500ms, logs wait for API to start + 1s.
 
 **Service startup with precise timing:**
 ```bash
-multiplex "INIT=setup" "DB#blue:INIT+1s=docker run postgres" "CACHE#yellow:INIT+500ms=redis-server" "API#green:DB:CACHE&+2s=node server.js" "HEALTH#red:API&+5s|end=curl localhost:3000/health"
+multiplex "INIT=setup" "DB#blue:INIT+1=docker run postgres" "CACHE#yellow:INIT+0.5=redis-server" "API#green:DB:CACHE&+2=node server.js" "HEALTH#red:API&+5|end=curl localhost:3000/health"
 ```
 Demonstrates complex dependencies - API waits for DB to complete AND CACHE to start, then waits 2s. Health check waits for API to start + 5s then exits.
 
@@ -220,7 +222,7 @@ Shows how to coordinate multiple services starting in parallel with delays.
 
 **CI/CD Pipeline (`examples/cicd-pipeline.sh`)**
 ```bash
-multiplex "BUILD=build" "+BUILD=test" "+TESTS=deploy|end"
+multiplex "BUILD=build" ":BUILD=test" ":TESTS=deploy|end"
 ```
 Demonstrates a realistic deployment pipeline with sequential steps.
 
@@ -234,19 +236,19 @@ Shows silent processes and automatic termination with `|end` action.
 
 **HTTP Benchmark (`examples/http-benchmark.sh`)**
 ```bash
-multiplex "A=python -m http.server" "+A=ab -n1000 http://localhost:8000/"
+multiplex "A=python -m http.server" ":A=ab -n1000 http://localhost:8000/"
 ```
 Real HTTP server benchmarking where the test waits for server startup.
 
 **Special Cases (`examples/special-cases.sh`)**
 ```bash
-multiplex "=echo 'VAR=value'" "SETUP|silent=setup" "+SETUP=continue"
+multiplex "=echo 'VAR=value'" "SETUP|silent=setup" ":SETUP=continue"
 ```
 Handles commands with equals signs and complex action combinations.
 
 **Complete Demo (`examples/complete-demo.sh`)**
 ```bash
-multiplex "SETUP|silent=setup" "DB+1=database" "API+DB=api" "UI+API=ui" "+UI|end=done"
+multiplex "SETUP|silent=setup" "DB+1=database" "API:DB=api" "UI:API=ui" ":UI|end=done"
 ```
 Comprehensive example showcasing all features: naming, time/process delays, actions, and coordination.
 
@@ -265,3 +267,8 @@ bash examples/http-benchmark.sh
 ```
 
 Each example includes descriptive output explaining what's happening during execution.
+
+## Similar tools
+
+- [foreman](https://github.com/ddollar/foreman) and [honcho](https://github.com/nickstenning/honcho)
+  offer similar features.
