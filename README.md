@@ -199,6 +199,32 @@ multiplex "=echo a=b"
 - **Purpose**: Terminate all processes after specified time
 - **Example**: `multiplex -t 30 "server=python -m http.server" "test=curl localhost:8000"`
 
+**Timestamps:**
+- **Format**: `--timestamp` (add timestamps to log entries)
+- **Format**: `-r|--relative` (show timestamps relative to start time, requires `--timestamp`)
+- **Purpose**: Add timestamp prefixes to all log entries for timing analysis
+- **Examples**:
+  - `multiplex --timestamp "A=echo hello" "B=echo world"` - absolute timestamps (HH:MM:SS)
+  - `multiplex --timestamp -r "A=echo hello" "B+1s=echo world"` - relative timestamps (00:00:00 start)
+
+**Timestamp Output Format:**
+```bash
+# Without timestamps
+$│A│echo hello from A
+<│A│hello from A
+=│A│0
+
+# With absolute timestamps (--timestamp)
+12:31:20|$│A│echo hello from A
+12:31:20|<│A│hello from A
+12:31:21|=│A│0
+
+# With relative timestamps (--timestamp -r)
+00:00:00|$│A│echo hello from A
+00:00:00|<│A│hello from A
+00:00:01|=│A│0
+```
+
 # Examples
 
 The `examples/` directory contains practical demonstrations of multiplex features:
@@ -287,6 +313,12 @@ multiplex "SETUP|silent=setup" "DB+1=database" "API:DB=api" "UI:API=ui" ":UI|end
 ```
 Comprehensive example showcasing all features: naming, time/process delays, actions, and coordination.
 
+**Timestamp Demo (`examples/timestamp-demo.sh`)**
+```bash
+multiplex --timestamp -r "A=echo hello from A" "B+1s=cat"
+```
+Demonstrates timestamp functionality showing relative timing between processes.
+
 ## Running Examples
 
 All examples are executable scripts:
@@ -299,6 +331,7 @@ bash examples/color-demo.sh
 bash examples/time-delays.sh
 bash examples/delay-suffixes-demo.sh
 bash examples/http-benchmark.sh
+bash examples/timestamp-demo.sh
 ```
 
 Each example includes descriptive output explaining what's happening during execution.

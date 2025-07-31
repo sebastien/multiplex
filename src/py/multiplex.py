@@ -5,6 +5,7 @@ from pathlib import Path
 from threading import Thread
 from typing import NamedTuple, ClassVar
 import argparse
+import datetime
 import os
 import re
 import select
@@ -325,8 +326,33 @@ class Formatter:
 		writer: Callable[[bytes], None] | None = lambda data: None
 		if os.write(1, data)
 		else None,
+		timestamp: bool = False,
+		relative: bool = False,
 	) -> None:
 		self.writer = writer
+		self.timestamp = timestamp
+		self.relative = relative
+		self.start_time = datetime.datetime.now() if timestamp else None
+
+	def _get_timestamp_prefix(self) -> bytes:
+		"""Generate timestamp prefix for log entries"""
+		if not self.timestamp or not self.start_time:
+			return b""
+		
+		current_time = datetime.datetime.now()
+		if self.relative:
+			# Calculate time relative to start
+			elapsed = current_time - self.start_time
+			total_seconds = int(elapsed.total_seconds())
+			hours = total_seconds // 3600
+			minutes = (total_seconds % 3600) // 60
+			seconds = total_seconds % 60
+			timestamp_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+		else:
+			# Use current time
+			timestamp_str = current_time.strftime("%H:%M:%S")
+		
+		return bytes(f"{timestamp_str}|", "utf8")
 
 	def _get_color_code(self, color: str | None) -> str:
 		"""Convert color name or hex code to ANSI escape sequence"""
@@ -387,6 +413,7 @@ class Formatter:
 		sep: str = SEP,
 		color: str | None = None,
 	) -> None:
+		timestamp_prefix = self._get_timestamp_prefix()
 		colored_key = self._apply_color(key, color)
 		stream_prefix = bytes(f"{self.STREAMS[stream]}{sep}", "utf8")
 		sep_suffix = bytes(f"{sep}", "utf8")
@@ -399,6 +426,7 @@ class Formatter:
 			lines = lines[:-1]
 		if self.writer:
 			for line in lines:
+				self.writer(timestamp_prefix)
 				self.writer(stream_prefix)
 				self.writer(colored_key)
 				self.writer(sep_suffix)
@@ -428,7 +456,7 @@ class Runner:
 			cls.Instance = Runner()
 		return cls.Instance
 
-	def __init__(self) -> None:
+	def __init__(self, timestamp: bool = False, relative: bool = False) -> None:
 		self.commands: dict[str, tuple[Command, Thread]] = {}
 		self.process_started: dict[
 			str, threading.Event
@@ -436,7 +464,7 @@ class Runner:
 		self.process_outputs: dict[
 			str, dict[int, list[bytes]]
 		] = {}  # Track process outputs by key and stream
-		self.formatter: Formatter = Formatter()
+		self.formatter: Formatter = Formatter(timestamp=timestamp, relative=relative)
 		self.graceful_timeout: float = 5.0  # Default graceful shutdown timeout
 		self.force_timeout: float = 2.0  # Additional time before SIGKILL
 		self.registerSignals()
@@ -549,7 +577,6 @@ class Runner:
 				try:
 					while not redirect_stop_event.is_set():
 						# Collect data from all redirect sources
-						data_written = False
 						for source in redirects.sources:
 							if source.key in self.process_outputs:
 								output_buffer = self.process_outputs[source.key][
@@ -562,7 +589,6 @@ class Runner:
 									if data:
 										try:
 											os.write(stdin_write_fd, data)
-											data_written = True
 										except (OSError, BrokenPipeError):
 											# Pipe closed, stop redirecting
 											return
@@ -1244,6 +1270,19 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 		default=False,
 		help="Outputs the parsed command",
 	)
+	oparser.add_argument(
+		"--timestamp",
+		action="store_true",
+		default=False,
+		help="Add HH:MM:SS timestamp prefix to log entries",
+	)
+	oparser.add_argument(
+		"-r",
+		"--relative",
+		action="store_true",
+		default=False,
+		help="Show timestamps relative to start time (requires --timestamp)",
+	)
 
 	# We create the parse and register the options
 	args = oparser.parse_args(args=argv)
@@ -1261,7 +1300,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 			out.write(f"- actions: {parsed_cmd.actions}\n")
 			out.write(f"- cmd: {parsed_cmd.command}\n")
 	else:
-		runner = Runner()
+		runner = Runner(timestamp=args.timestamp, relative=args.relative)
 		for command in args.commands:
 			# Parse the command using the new format
 			parsed_cmd = parse(command)
