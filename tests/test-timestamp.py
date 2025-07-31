@@ -2,7 +2,7 @@
 """
 Test timestamp functionality for multiplex.
 
-This test verifies that the -t/--timestamp and -r/--relative options work correctly.
+This test verifies that the --time and --time=relative options work correctly.
 """
 
 import re
@@ -49,7 +49,7 @@ def test_cli_timestamp_options():
 	
 	# Test basic timestamp functionality via CLI
 	result = subprocess.run(
-		[sys.executable, "-m", "multiplex", "--timestamp", "echo test"],
+		[sys.executable, "-m", "multiplex", "--time", "echo test"],
 		cwd=Path(__file__).parent.parent / "src" / "py",
 		capture_output=True,
 		text=True
@@ -68,7 +68,7 @@ def test_cli_timestamp_options():
 	
 	# Test relative timestamp functionality
 	result_rel = subprocess.run(
-		[sys.executable, "-m", "multiplex", "--timestamp", "-r", "echo test"],
+		[sys.executable, "-m", "multiplex", "--time=relative", "echo test"],
 		cwd=Path(__file__).parent.parent / "src" / "py",
 		capture_output=True,
 		text=True
@@ -89,7 +89,7 @@ def test_timestamp_multiple_commands():
 	print("Testing timestamps with multiple commands...")
 	
 	result = subprocess.run([
-		sys.executable, "-m", "multiplex", "--timestamp", "-r",
+		sys.executable, "-m", "multiplex", "--time=relative",
 		"A=echo hello from A",
 		"B+1s=echo hello from B"
 	], cwd=Path(__file__).parent.parent / "src" / "py",

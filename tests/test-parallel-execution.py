@@ -49,7 +49,7 @@ def test_cli_parallel_execution():
     print("Testing CLI parallel execution with timestamps...")
     
     result = subprocess.run([
-        sys.executable, "-m", "multiplex", "--timestamp", "-r",
+        sys.executable, "-m", "multiplex", "--time=relative",
         "A=sh -c 'sleep 1; echo A done'",
         "B=sh -c 'sleep 1; echo B done'"
     ], cwd=Path(__file__).parent.parent / "src" / "py",

@@ -1270,22 +1270,54 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 		default=False,
 		help="Outputs the parsed command",
 	)
-	oparser.add_argument(
-		"--timestamp",
-		action="store_true",
-		default=False,
-		help="Add HH:MM:SS timestamp prefix to log entries",
+	def custom_parse_time_arg(argv):
+		"""Custom parser to handle --time and --time=relative properly"""
+		time_mode = None
+		filtered_argv = []
+		i = 0
+		while i < len(argv):
+			arg = argv[i]
+			if arg == "--time":
+				# --time without value - default to absolute
+				time_mode = "absolute"
+			elif arg.startswith("--time="):
+				# --time=value format
+				value = arg.split("=", 1)[1]
+				if value in ("relative", "absolute"):
+					time_mode = value
+				else:
+					raise ValueError(f"Invalid time mode: {value}")
+			else:
+				filtered_argv.append(arg)
+			i += 1
+		return filtered_argv, time_mode
+
+	# Custom parse the time argument first
+	filtered_argv, time_mode = custom_parse_time_arg(argv)
+	
+	# Create a mutually exclusive group for time options
+	time_group = oparser.add_mutually_exclusive_group()
+	time_group.add_argument(
+		"--time",
+		action="store_const",
+		const="absolute",
+		dest="time_mode",
+		help="Add timestamps to log entries as (HH:MM:SS). Also supports --time=relative for relative timestamps",
 	)
-	oparser.add_argument(
-		"-r",
-		"--relative",
-		action="store_true",
-		default=False,
-		help="Show timestamps relative to start time (requires --timestamp)",
+	time_group.add_argument(
+		"--time-relative",
+		action="store_const", 
+		const="relative",
+		dest="time_mode",
+		help="Add relative timestamps (00:00:00 start)",
 	)
 
 	# We create the parse and register the options
-	args = oparser.parse_args(args=argv)
+	args = oparser.parse_args(args=filtered_argv)
+	
+	# Override time_mode with our custom parsed value if it was found
+	if time_mode is not None:
+		args.time_mode = time_mode
 	out_path = args.output if args.output and args.output != "-" else None
 	out = open(out_path, "wt") if out_path else sys.stdout
 	if args.parse:
@@ -1300,7 +1332,11 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 			out.write(f"- actions: {parsed_cmd.actions}\n")
 			out.write(f"- cmd: {parsed_cmd.command}\n")
 	else:
-		runner = Runner(timestamp=args.timestamp, relative=args.relative)
+		# Determine timestamp settings from --time argument
+		timestamp_enabled = args.time_mode is not None
+		relative_timestamps = args.time_mode == "relative"
+		
+		runner = Runner(timestamp=timestamp_enabled, relative=relative_timestamps)
 		for command in args.commands:
 			# Parse the command using the new format
 			parsed_cmd = parse(command)
