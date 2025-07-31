@@ -176,10 +176,10 @@ Delays are like previously mentioned:
 
 Actions modify process behavior:
 
-- **`|end`**: When this process ends, terminate all other processes
-- **`|silent`**: Suppress all output (stdout and stderr)
-- **`|noout`**: Suppress stdout only
-- **`|noerr`**: Suppress stderr only
+- `|end` ― When this process ends, terminate all other processes
+- `|silent` ― Suppress all output (stdout and stderr)
+- `|noout` ― Suppress stdout only
+- `|noerr` ― Suppress stderr only
 
 Actions can be combined: `|silent|end=command`
 
