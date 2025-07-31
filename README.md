@@ -1,5 +1,4 @@
-```
-              .__   __  .__       .__
+``` .__   __  .__       .__
   _____  __ __|  |_/  |_|__|_____ |  |   ____ ___  ___
  /     \|  |  \  |\   __\  \____ \|  | _/ __ \\  \/  /
 |  Y Y  \  |  /  |_|  | |  |  |_> >  |_\  ___/ >    <
@@ -24,7 +23,8 @@ Here's how you'd benchmark Python's embedded HTTP server with a
 one-liner using the new dependency format:
 
 ```
-multiplex "SERVER|silent=python -m http.server" ":SERVER&+1s|end=ab -n1000 http://localhost:8000/"
+# Starts a web server, waits 2s and start the benchmark, and terminates after that
+multiplex "SERVER|silent=python3 -m http.server" "+2s|end=ab -n1000 http://localhost:8000/"
 ```
 
 Multiplex is designed to be run as a CLI tool, without the need of a
@@ -38,22 +38,23 @@ Python API if you want to have more advanced use cases.
 
 Multiplex is available on PyPI at https://pypi.org/project/multiplex-sh
 
-## Using uv (recommended)
+With `uv`
 
     $ uv tool install multiplex-sh
     $ multiplex --help
 
-## Using pip
+Using `pip`
 
     $ pip install multiplex-sh
     $ multiplex --help
 
-## Direct download
-
-Quick, from the shell:
+Straight from Github:
 
     $ curl -o multiplex https://raw.githubusercontent.com/sebastien/multiplex/main/src/py/multiplex.py; chmod +x multiplex
     $ ./multiplex --help
+
+Note that you'll need a Python 3.8+ interpreter available, and that this is
+only tested on Linux and MacOS.
 
 # Usage
 
@@ -61,89 +62,118 @@ Quick, from the shell:
 
 Here are some example commands that will help understand the syntax:
 
-Running a simple command:
+Running multiple commands in parallel:
 
-    multiplex "python -m http.server"
+```bash
+multiplex "python -m http.server -p 8000" "python -m http.server -p 8001"
+```
 
 Running a command after 5s delay:
 
-    multiplex "+5=python -m http.server"
+```bash
+multiplex "+5=python -m http.server"
+```
 
 Running a command after another completes:
 
-    multiplex "A=python -m http.server" ":A=ab -n1000 http://localhost:8000/"
+```bash
+multiplex "A=find . -name '*.*'" "B:A=du -hs ."
+```
 
 Running multiple commands with complex coordination:
 
-    multiplex "DB=mongod" "API:DB+2=node server.js" ":API|end=npm test"
+```bash
+# Starts the DB, wait two seconds after it started, run the server, and
+# once the server is started, start the test. When the test ends,
+# gracefully shut down everything.
+multiplex "DB=mongod" "API:DB&+2=node server.js" ":API&|end=npm test"
+```
 
 ## Command Syntax
 
-Commands follow a structured format: `[KEY][#COLOR][+DELAY…][:DEP…][|ACTIONS]=COMMAND`
+Commands follow a structured format:
 
-### Naming (`KEY=`)
-- **Purpose**: Assign a name to a process for reference by other commands
-- **Format**: `KEY=command` where KEY is alphanumeric (A-Z, a-z, 0-9, _)
-- **Examples**:
-  - `A=python -m http.server`
-  - `DB=mongod --port 27017`
-  - `API_SERVER=node app.js`
+```
+[KEY][#COLOR][+DELAY…][:DEP…][|ACTIONS]=COMMAND`
+```
 
-### Colors (`#COLOR`)
-- **Purpose**: Style channel names with colors in output
-- **Named colors**: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `bright_red`, `bright_green`, etc.
-- **Hex colors**: 6-digit hex codes like `FF0000` (red), `00FF00` (green), `0000FF` (blue)
-- **Examples**:
-  - `server#red=python -m http.server`
-  - `db#blue=mongod --port 27017`
-  - `worker#00FF00=python worker.py`
-  - `logs#FFA500=tail -f app.log`
+where:
 
-### Start Delays (`+DELAY`)
-- **Purpose**: Delay the start of a command by a specified time
-- **Format**: `+DELAY` where DELAY can be a number (seconds) or include time units
-- **Time units**: `ms` (milliseconds), `s` (seconds), `m` (minutes) - units are optional, defaults to seconds
-- **Examples**:
-  - `+2=command` - start after 2 seconds
-  - `API+1.5=command` - start API after 1.5 seconds
-  - `#blue+500ms=command` - start with blue color after 500 milliseconds
-  - `WORKER#green+2:DB=command` - start WORKER (green) after 2 seconds, then wait for DB
+- `#COLOR` for a given color, either by name or in hex
+- `:DEP` is a dependency (see below, can be chained)
+- `|ACTION` is an action (can be chained)
 
-### Dependencies (`:DEP`)
+Dependencies are in the following form:
+
+```
+[KEY][&][+DELAY…]
+```
+
+- `KEY` for the process name we wait on, if it is followed by `&` then it
+  indicates the process start instead of the end.
+- `+DELAY` for a delay (can be chained)
+
+**Channel name** (`KEY=`): Assign a name to a process for reference by other commands. The format is
+`KEY=command` where `KEY` is alphanumeric (`A-Z`, `a-z`, `0-9`, `_`):
+- `A=python -m http.server`
+- `DB=mongod --port 27017`
+- `API_SERVER=node app.js`
+
+**Colors** (`#COLOR`): Style channel names with colors in output. Can take
+named colors `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `bright_red`, `bright_green`, or
+6-digit **hex codes** like `FF0000`:
+- `server#red=python -m http.server`
+- `db#blue=mongod --port 27017`
+- `worker#00FF00=python worker.py`
+- `logs#FFA500=tail -f app.log`
+
+**Delays** (`+DELAY`): Delay the start of a command by a specified time. Format
+is `+DELAY` where DELAY can be a number (seconds) or include time units, like
+`ms` (milliseconds), `s` (seconds), `m` (minutes) ― units are optional,
+defaults to seconds:
+
+- **Time unit suffixes**: `ms` (milliseconds), `s` (seconds), `m` (minutes) - units are optional, defaults to seconds
+- **Plain numbers**: `5`, `1.5`, `0.5` (treated as seconds)
+- **Complex combinations**: `1m30s`, `2s500ms`, `1m1s1ms`
+- **Multiple delays**: `+1+0.5` (applies 1s delay, then 0.5s delay)
+
+And some examples:
+
+- `+2=command` ― start after 2 seconds
+- `API+1.5=command` ― start API after 1.5 seconds
+- `#blue+500ms=command` ― start with blue color after 500 milliseconds
+- `WORKER#green+2:DB=command` ― start `WORKER` (green) after 2 seconds, then wait for DB
+
+## Dependencies (`:DEP`)
+
 Dependencies allow commands to wait for other processes and apply delays.
-
-#### Dependency Format
-Each dependency follows: `[KEY][&][+DELAY…]`
+Each dependency follows: `[KEY][&][+DELAY…]`, where:
 
 - **`KEY`**: Process name to wait for
 - **`&`**: Optional indicator to wait for process **start** instead of **end**
 - **`+DELAY`**: Optional delays to apply after the dependency condition is met
 
-#### Dependency Types
-- **End dependency**: `:A` - wait for process A to complete
-- **Start dependency**: `:A&` - wait for process A to start
-- **Delayed dependency**: `:A+1s` - wait for A to complete, then wait 1 second
-- **Start with delay**: `:A&+500ms` - wait for A to start, then wait 500ms
+Here are some more examples:
 
-#### Multiple Dependencies
-- **Format**: `:DEP1:DEP2:DEP3`
-- **Examples**:
-  - `:A:B` - wait for both A and B to complete
-  - `:A&:B+1s` - wait for A to start AND B to complete + 1s
-  - `:DB:CACHE&+2s:CONFIG` - wait for DB to end, CACHE to start + 2s, and CONFIG to end
+- **End dependency**: `:A` ― wait for process A to complete
+- **Start dependency**: `:A&` ― wait for process A to start
+- **Delayed dependency**: `:A+1s` ― wait for A to complete, then wait 1 second
+- **Start with delay**: `:A&+500ms` ― wait for A to start, then wait 500ms
 
-#### Delay Formats in Dependencies
-- **Time unit suffixes**: `ms` (milliseconds), `s` (seconds), `m` (minutes) - units are optional, defaults to seconds
-- **Plain numbers**: `5`, `1.5`, `0.5` (treated as seconds)
-- **Complex combinations**: `1m30s`, `2s500ms`, `1m1s1ms`
-- **Multiple delays**: `+1+0.5` (applies 1s delay, then 0.5s delay)
-- **Examples**:
-  - `:A+2` - wait for A, then 2 seconds
-  - `:A+500ms` - wait for A, then 500 milliseconds
-  - `:B&+1m30s` - wait for B to start, then 90 seconds
-  - `:C+1+0.5` - wait for C, then 1s, then 0.5s more
+Dependencies can be chained like `:DEP1:DEP2:DEP3`, some examples:
+
+- `:A:B` ― wait for both A and B to complete
+- `:A&:B+1s` ― wait for A to start AND B to complete + 1s
+- `:DB:CACHE&+2s:CONFIG` ― wait for DB to end, CACHE to start + 2s, and CONFIG to end
+
+Delays are like previously mentioned:
+- `:A+2` ― wait for A, then 2 seconds
+- `:A+500ms` ― wait for A, then 500 milliseconds
+- `:B&+1m30s` ― wait for B to start, then 90 seconds
+- `:C+1+0.5` ― wait for C, then 1s, then 0.5s more
 
 ### Actions (`|ACTION`)
+
 Actions modify process behavior:
 
 - **`|end`**: When this process ends, terminate all other processes
@@ -155,59 +185,58 @@ Actions can be combined: `|silent|end=command`
 
 ### Examples by Pattern
 
-**Sequential execution:**
+Sequential execution:
+
 ```bash
+# Builds and runs once the build finishes.
 multiplex "BUILD=npm run build" ":BUILD=npm start"
 ```
 
-**Parallel with start delays:**
+Parallel with start delays:
+
 ```bash
 multiplex "DB=database" "API+2=api-server" "UI+3=ui-server"
 ```
 
-**Mixed start delays and dependencies:**
+Mixed start delays and dependencies:
+
 ```bash
 multiplex "DB+1=database" "API+2:DB=api-server" "UI+0.5:API&=ui-server"
 ```
 
-**Parallel with coordination:**
+Parallel with coordination:
+
 ```bash
 multiplex "DB=mongod" "API:DB+2=node server.js" ":API&=npm test"
 ```
 
-**Complex dependency chain:**
+Complex dependency chain:
+
 ```bash
 multiplex "CONFIG=setup" "DB:CONFIG+1=database" "CACHE:CONFIG+0.5=redis" "API:DB:CACHE&+2=server"
 ```
 
-**Development environment:**
+Development environment:
+
 ```bash
 multiplex "DB=mongod" "API:DB+2=npm run dev" "UI:API&+1=npm run ui" ":UI&+5=open http://localhost:3000"
 ```
 
-### Special Cases
+Special Cases: if your command contains an equals sign, use an empty prefix:
 
-If your command contains an equals sign, use an empty prefix:
 ```bash
 multiplex "=echo a=b"
 ```
 
-### Global Options
+### CLI
 
-**Timeout:**
-- **Format**: `-t|--timeout SECONDS`
-- **Purpose**: Terminate all processes after specified time
-- **Example**: `multiplex -t 30 "server=python -m http.server" "test=curl localhost:8000"`
+Options:
+- `-t|--timeout SECONDS`, terminate all processes after specified time.
+- `--time`, add timestamps to log entries as (HH:MM:SS)
+- `--time=relative`, show relative timestamps (00:00:00 start)
 
-**Timestamps:**
-- **Format**: `--timestamp` (add timestamps to log entries)
-- **Format**: `-r|--relative` (show timestamps relative to start time, requires `--timestamp`)
-- **Purpose**: Add timestamp prefixes to all log entries for timing analysis
-- **Examples**:
-  - `multiplex --timestamp "A=echo hello" "B=echo world"` - absolute timestamps (HH:MM:SS)
-  - `multiplex --timestamp -r "A=echo hello" "B+1s=echo world"` - relative timestamps (00:00:00 start)
+Output:
 
-**Timestamp Output Format:**
 ```bash
 # Without timestamps
 $│A│echo hello from A
@@ -227,7 +256,7 @@ $│A│echo hello from A
 
 # Examples
 
-The `examples/` directory contains practical demonstrations of multiplex features:
+The [examples/](examples/) directory contains practical demonstrations of multiplex features:
 
 ## Basic Patterns
 
@@ -318,23 +347,6 @@ Comprehensive example showcasing all features: naming, time/process delays, acti
 multiplex --timestamp -r "A=echo hello from A" "B+1s=cat"
 ```
 Demonstrates timestamp functionality showing relative timing between processes.
-
-## Running Examples
-
-All examples are executable scripts:
-```bash
-cd multiplex
-bash examples/sequential-build.sh
-bash examples/dependencies-demo.sh
-bash examples/dev-environment.sh
-bash examples/color-demo.sh
-bash examples/time-delays.sh
-bash examples/delay-suffixes-demo.sh
-bash examples/http-benchmark.sh
-bash examples/timestamp-demo.sh
-```
-
-Each example includes descriptive output explaining what's happening during execution.
 
 ## Related tools
 
