@@ -258,97 +258,149 @@ $│A│echo hello from A
 
 # Examples
 
-The [examples/](examples/) directory contains practical demonstrations of multiplex features:
+The [examples/](examples/) directory contains practical demonstrations of multiplex features. Each example is a runnable script that showcases specific functionality:
 
 ## Basic Patterns
 
-**Sequential Build (`examples/sequential-build.sh`)**
+**Sequential Build** ([`examples/sequential-build.sh`](examples/sequential-build.sh))
 ```bash
 multiplex "BUILD=echo 'Building...'" ":BUILD=echo 'Starting...'"
 ```
-Demonstrates dependency-based coordination where one command waits for another to complete.
+Simple dependency chain where one command waits for another to complete.
 
-**Dependencies Demo (`examples/dependencies-demo.sh`)**
-```bash
-multiplex "DB=setup-database" "API:DB+1s=start-api" "UI:API&+500ms=start-ui" ":UI|end=echo 'All ready'"
-```
-Shows the new dependency system with end dependencies (:DB), start dependencies (:API&), and delays.
-
-**Process Dependencies (`examples/process-delays.sh`)**
+**Process Dependencies** ([`examples/process-delays.sh`](examples/process-delays.sh))
 ```bash
 multiplex "STEP1=echo 'init'" "STEP2:STEP1=echo 'process'" ":STEP2=echo 'done'"
 ```
-Demonstrates chaining processes where each waits for the previous to complete.
+Demonstrates sequential execution where each process waits for the previous one.
 
-## Real-world Scenarios
-
-**Development environment with start delays:**
+**Time Delays** ([`examples/time-delays.sh`](examples/time-delays.sh))
 ```bash
-multiplex "DB#blue+1=mongod" "API#green+3:DB=node server.js" "UI#cyan+5:API&=npm run dev" "BROWSER+7:UI&=open http://localhost:3000"
+multiplex "INIT=echo 'starting'" "+2=echo 'after 2 seconds'" "+5=echo 'after 5 seconds'"
 ```
-Demonstrates start delays combined with dependencies - DB starts after 1s, API starts after 3s AND waits for DB, UI starts after 5s AND waits for API to start, browser opens after 7s AND waits for UI to start.
+Shows simple time-based delays for process coordination.
 
-**Development environment with dependencies:**
-```bash
-multiplex "DB#blue=mongod" "API#green:DB+2=node server.js" "UI#cyan:API&+0.5=npm run ui" "logs#FFA500:API&+1=tail -f app.log"
-```
-Shows dependency coordination - API waits for DB to complete + 2s, UI waits for API to start + 500ms, logs wait for API to start + 1s.
-
-**Service startup with precise timing:**
-```bash
-multiplex "INIT=setup" "DB#blue:INIT+1=docker run postgres" "CACHE#yellow:INIT+0.5=redis-server" "API#green:DB:CACHE&+2=node server.js" "HEALTH#red:API&+5|end=curl localhost:3000/health"
-```
-Demonstrates complex dependencies - API waits for DB to complete AND CACHE to start, then waits 2s. Health check waits for API to start + 5s then exits.
-
-**Color Demo (`examples/color-demo.sh`)**
-```bash
-multiplex "server#red=python -m http.server" "worker#00FF00=python worker.py" "monitor#cyan=system-monitor"
-```
-Demonstrates both named colors (red, cyan) and hex colors (00FF00 for bright green).
-
-**Parallel Coordination (`examples/parallel-coordination.sh`)**
+**Parallel Coordination** ([`examples/parallel-coordination.sh`](examples/parallel-coordination.sh))
 ```bash
 multiplex "DB=database" "API+2=api-server" "UI+2=ui-server" "+5=open-browser"
 ```
-Shows how to coordinate multiple services starting in parallel with delays.
+Multiple services starting in parallel with staggered delays.
 
-**CI/CD Pipeline (`examples/cicd-pipeline.sh`)**
+## Advanced Dependency Management
+
+**Dependencies Demo** ([`examples/dependencies-demo.sh`](examples/dependencies-demo.sh))
 ```bash
-multiplex "BUILD=build" ":BUILD=test" ":TESTS=deploy|end"
+# Complex dependency chains with start/end dependencies and delays
+multiplex "DB#blue=sleep 2 && echo 'Database: Ready'" \
+          "API#green:DB=sleep 1 && echo 'API: Connected'" \
+          "UI#cyan:API=echo 'UI: Ready'" \
+          ":UI=echo 'All services ready!'"
 ```
-Demonstrates a realistic deployment pipeline with sequential steps.
+Comprehensive demonstration of the dependency system with:
+- End dependencies (`:DB` - wait for DB to complete)
+- Start dependencies (`:API&` - wait for API to start)
+- Delayed dependencies (`:DB+1s` - wait for DB + 1 second)
+- Multiple dependencies (`:DB:CACHE&+2s`)
 
-## Advanced Features
-
-**Actions Demo (`examples/actions-demo.sh`)**
+**Development Environment** ([`examples/dev-environment.sh`](examples/dev-environment.sh))
 ```bash
-multiplex "SERVER|silent=long-running" "+2|end=test-and-exit"
+multiplex "DB=echo 'MongoDB starting...'; sleep 2; echo 'MongoDB ready'" \
+          "API+2=echo 'API starting...'; sleep 1; echo 'API ready'" \
+          "UI+2=echo 'UI starting...'; sleep 1; echo 'UI ready'" \
+          "+5=echo 'Opening browser...'"
 ```
-Shows silent processes and automatic termination with `|end` action.
+Realistic development environment setup with proper service coordination.
 
-**HTTP Benchmark (`examples/http-benchmark.sh`)**
-```bash
-multiplex "A=python -m http.server" ":A=ab -n1000 http://localhost:8000/"
-```
-Real HTTP server benchmarking where the test waits for server startup.
+## Timing and Precision
 
-**Special Cases (`examples/special-cases.sh`)**
+**Delay Suffixes Demo** ([`examples/delay-suffixes-demo.sh`](examples/delay-suffixes-demo.sh))
 ```bash
-multiplex "=echo 'VAR=value'" "SETUP|silent=setup" ":SETUP=continue"
+multiplex "echo 'Starting...'" \
+          "+100ms=echo 'Quick response'" \
+          "+2s=echo 'After 2 seconds'" \
+          "+1m=echo 'One minute later'" \
+          "+1m30s750ms=echo 'Complex timing (90.75s)'"
 ```
-Handles commands with equals signs and complex action combinations.
+Demonstrates advanced timing features:
+- Milliseconds (`100ms`, `750ms`)
+- Seconds (`2s`, `30s`)
+- Minutes (`1m`)
+- Complex combinations (`1m30s750ms`)
 
-**Complete Demo (`examples/complete-demo.sh`)**
+**Timestamp Demo** ([`examples/timestamp-demo.sh`](examples/timestamp-demo.sh))
 ```bash
-multiplex "SETUP|silent=setup" "DB+1=database" "API:DB=api" "UI:API=ui" ":UI|end=done"
+multiplex --timestamp -r "A=echo hello" "B+1s=echo world"
 ```
-Comprehensive example showcasing all features: naming, time/process delays, actions, and coordination.
+Shows timestamp functionality with relative timing display.
 
-**Timestamp Demo (`examples/timestamp-demo.sh`)**
+## Visual and Output Control
+
+**Color Demo** ([`examples/color-demo.sh`](examples/color-demo.sh))
 ```bash
-multiplex --timestamp -r "A=echo hello from A" "B+1s=cat"
+multiplex "server#red=python -m http.server" \
+          "worker#00FF00=python worker.py" \
+          "monitor#cyan=system-monitor" \
+          "logs#FFA500=tail -f app.log"
 ```
-Demonstrates timestamp functionality showing relative timing between processes.
+Demonstrates color functionality:
+- Named colors (`red`, `blue`, `green`, `cyan`, `yellow`, `magenta`, `white`)
+- Bright colors (`bright_red`, `bright_green`, etc.)
+- Hex colors (`00FF00` for bright green, `FFA500` for orange)
+
+**Actions Demo** ([`examples/actions-demo.sh`](examples/actions-demo.sh))
+```bash
+multiplex "SERVER|silent=long-running-process" \
+          "+1=echo 'Running tests...'" \
+          "+2|end=echo 'Tests complete - terminating all'"
+```
+Shows process actions:
+- `|silent` - suppress all output
+- `|noout` - suppress stdout only
+- `|noerr` - suppress stderr only
+- `|end` - terminate all processes when this one ends
+
+**Redirects Demo** ([`examples/redirects-demo.sh`](examples/redirects-demo.sh))
+Advanced output redirection and file handling examples.
+
+## Real-world Use Cases
+
+**HTTP Benchmark** ([`examples/http-benchmark.sh`](examples/http-benchmark.sh))
+```bash
+multiplex "A=python3 -m http.server" ":A=ab -n1000 http://localhost:8000/"
+```
+Start a web server and run Apache Bench against it once it's ready.
+
+**CI/CD Pipeline** ([`examples/cicd-pipeline.sh`](examples/cicd-pipeline.sh))
+```bash
+multiplex "BUILD=npm run build" ":BUILD=npm test" ":TEST=npm run deploy|end"
+```
+Sequential build, test, and deployment pipeline.
+
+**Special Cases** ([`examples/special-cases.sh`](examples/special-cases.sh))
+```bash
+multiplex "=echo 'VAR=value'" "SETUP|silent=configuration" ":SETUP=continue"
+```
+Handles edge cases like commands with equals signs and complex action combinations.
+
+**Complete Demo** ([`examples/complete-demo.sh`](examples/complete-demo.sh))
+```bash
+multiplex "SETUP|silent=init" "DB+1=database" "API:DB=server" "UI:API=frontend" ":UI|end=done"
+```
+Comprehensive example showcasing all major features together.
+
+## Running Examples
+
+All examples can be run directly:
+
+```bash
+# Run any example script
+./examples/dependencies-demo.sh
+
+# Or run the underlying multiplex command
+python3 -m multiplex "DB=echo 'Database ready'" ":DB=echo 'App started'"
+```
+
+Each example includes explanatory comments and demonstrates specific multiplex features in isolation or combination.
 
 ## Related tools
 
