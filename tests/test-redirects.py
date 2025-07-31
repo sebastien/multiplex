@@ -21,7 +21,7 @@ from multiplex import parse, ParsedCommand, Redirect, RedirectSource, Dependency
 def test_no_redirect():
 	"""Test parsing a command with no redirect"""
 	result = parse("echo hello")
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["echo", "hello"])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["echo", "hello"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	assert result.redirects is None
 	print("✓ No redirect parsing")
@@ -30,7 +30,7 @@ def test_no_redirect():
 def test_simple_stdout_redirect():
 	"""Test parsing a command with simple stdout redirect (<A)"""
 	result = parse("<A=echo hello")
-	expected = ParsedCommand(None, None, 0.0, [], Redirect([RedirectSource("A", 1)]), [], ["echo", "hello"]
+	expected = ParsedCommand(None, None, 0.0, [], Redirect([RedirectSource("A", 1)]), None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	assert result.redirects is not None
@@ -43,7 +43,7 @@ def test_simple_stdout_redirect():
 def test_explicit_stdout_redirect():
 	"""Test parsing a command with explicit stdout redirect (<1A)"""
 	result = parse("<1A=echo hello")
-	expected = ParsedCommand(None, None, 0.0, [], Redirect([RedirectSource("A", 1)]), [], ["echo", "hello"]
+	expected = ParsedCommand(None, None, 0.0, [], Redirect([RedirectSource("A", 1)]), None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	assert result.redirects.sources[0].stream == 1
@@ -53,7 +53,7 @@ def test_explicit_stdout_redirect():
 def test_stderr_redirect():
 	"""Test parsing a command with stderr redirect (<2A)"""
 	result = parse("<2A=echo hello")
-	expected = ParsedCommand(None, None, 0.0, [], Redirect([RedirectSource("A", 2)]), [], ["echo", "hello"]
+	expected = ParsedCommand(None, None, 0.0, [], Redirect([RedirectSource("A", 2)]), None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	assert result.redirects.sources[0].stream == 2
@@ -65,6 +65,7 @@ def test_combined_streams_redirect():
 	result = parse("<(1A,2A)=echo hello")
 	expected = ParsedCommand(None, None, 0.0, [],
 		Redirect([RedirectSource("A", 1), RedirectSource("A", 2)]),
+		None,
 		[],
 		["echo", "hello"],
 	)
@@ -82,6 +83,7 @@ def test_multiple_processes_redirect():
 	result = parse("<(A,B)=echo hello")
 	expected = ParsedCommand(None, None, 0.0, [],
 		Redirect([RedirectSource("A", 1), RedirectSource("B", 1)]),
+		None,
 		[],
 		["echo", "hello"],
 	)
@@ -99,6 +101,7 @@ def test_complex_mixed_redirect():
 	result = parse("<(1A,2B)=echo hello")
 	expected = ParsedCommand(None, None, 0.0, [],
 		Redirect([RedirectSource("A", 1), RedirectSource("B", 2)]),
+		None,
 		[],
 		["echo", "hello"],
 	)
@@ -113,7 +116,7 @@ def test_complex_mixed_redirect():
 def test_redirect_with_key():
 	"""Test parsing a command with redirect and key"""
 	result = parse("B<A=echo hello")
-	expected = ParsedCommand("B", None, 0.0, [], Redirect([RedirectSource("A", 1)]), [], ["echo", "hello"]
+	expected = ParsedCommand("B", None, 0.0, [], Redirect([RedirectSource("A", 1)]), None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	assert result.key == "B"
@@ -124,7 +127,7 @@ def test_redirect_with_key():
 def test_redirect_with_color():
 	"""Test parsing a command with redirect and color"""
 	result = parse("#red<A=echo hello")
-	expected = ParsedCommand(None, "red", 0.0, [], Redirect([RedirectSource("A", 1)]), [], ["echo", "hello"]
+	expected = ParsedCommand(None, "red", 0.0, [], Redirect([RedirectSource("A", 1)]), None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	assert result.color == "red"
@@ -137,6 +140,7 @@ def test_redirect_with_dependencies():
 	result = parse("<A:B=echo hello")
 	expected = ParsedCommand(None, None, 0.0, [Dependency("B", False, [])],
 		Redirect([RedirectSource("A", 1)]),
+		None,
 		[],
 		["echo", "hello"],
 	)
@@ -152,6 +156,7 @@ def test_redirect_with_actions():
 	result = parse("<A|silent=echo hello")
 	expected = ParsedCommand(None, None, 0.0, [],
 		Redirect([RedirectSource("A", 1)]),
+		None,
 		["silent"],
 		["echo", "hello"],
 	)
@@ -166,6 +171,7 @@ def test_full_format_with_redirect():
 	result = parse("worker#blue<(A,2B):C&+1s|silent=python script.py")
 	expected = ParsedCommand("worker", "blue", 0.0, [Dependency("C", True, [1.0])],
 		Redirect([RedirectSource("A", 1), RedirectSource("B", 2)]),
+		None,
 		["silent"],
 		["python", "script.py"],
 	)

@@ -10,7 +10,7 @@ from multiplex import parse, ParsedCommand
 def test_basic_command():
 	"""Test parsing a basic command without any metadata"""
 	result = parse("python -m http.server")
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["python", "-m", "http.server"])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["python", "-m", "http.server"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Basic command parsing")
 
@@ -18,7 +18,7 @@ def test_basic_command():
 def test_named_command():
 	"""Test parsing a command with a name"""
 	result = parse("A=python -m http.server")
-	expected = ParsedCommand("A", None, 0.0, [], None, [], ["python", "-m", "http.server"])
+	expected = ParsedCommand("A", None, 0.0, [], None, None, [], ["python", "-m", "http.server"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Named command parsing")
 
@@ -28,7 +28,7 @@ def test_delay_seconds():
 	result = parse(
 		"python -m http.server"
 	)  # Changed: delays are now part of dependencies
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["python", "-m", "http.server"])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["python", "-m", "http.server"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Command parsing (delay moved to dependencies)")
 
@@ -38,7 +38,7 @@ def test_delay_float():
 	result = parse(
 		"python -m http.server"
 	)  # Changed: delays are now part of dependencies
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["python", "-m", "http.server"])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["python", "-m", "http.server"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Command parsing (float delay moved to dependencies)")
 
@@ -48,7 +48,7 @@ def test_named_delay():
 	result = parse(
 		"A=python -m http.server"
 	)  # Changed: delays are now part of dependencies
-	expected = ParsedCommand("A", None, 0.0, [], None, [], ["python", "-m", "http.server"])
+	expected = ParsedCommand("A", None, 0.0, [], None, None, [], ["python", "-m", "http.server"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Named command parsing (delay moved to dependencies)")
 
@@ -57,7 +57,7 @@ def test_single_action():
 	"""Test parsing a command with a single action"""
 	result = parse("|silent=python -m http.server")
 	expected = ParsedCommand(
-		None, None, 0.0, [], None, ["silent"], ["python", "-m", "http.server"]
+		None, None, 0.0, [], None, None, ["silent"], ["python", "-m", "http.server"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Single action parsing")
@@ -67,7 +67,7 @@ def test_multiple_actions():
 	"""Test parsing a command with multiple actions"""
 	result = parse("|silent|end=python -m http.server")
 	expected = ParsedCommand(
-		None, None, 0.0, [], None, ["silent", "end"], ["python", "-m", "http.server"]
+		None, None, 0.0, [], None, None, ["silent", "end"], ["python", "-m", "http.server"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Multiple actions parsing")
@@ -77,7 +77,7 @@ def test_complex_command():
 	"""Test parsing a complex command with name and actions (delay moved to dependencies)"""
 	result = parse("A|silent|end=python -m http.server")
 	expected = ParsedCommand(
-		"A", None, 0.0, [], None, ["silent", "end"], ["python", "-m", "http.server"]
+		"A", None, 0.0, [], None, None, ["silent", "end"], ["python", "-m", "http.server"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Complex command parsing")
@@ -86,7 +86,7 @@ def test_complex_command():
 def test_command_with_quotes():
 	"""Test parsing a command with quoted arguments"""
 	result = parse('echo "hello world"')
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["echo", "hello world"])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["echo", "hello world"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Quoted arguments parsing")
 
@@ -94,7 +94,7 @@ def test_command_with_quotes():
 def test_command_with_single_quotes():
 	"""Test parsing a command with single quoted arguments"""
 	result = parse("echo 'hello world'")
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["echo", "hello world"])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["echo", "hello world"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Single quoted arguments parsing")
 
@@ -102,7 +102,7 @@ def test_command_with_single_quotes():
 def test_empty_prefix_with_equals():
 	"""Test parsing a command that starts with equals (empty prefix)"""
 	result = parse("=echo =")
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["echo", "="])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["echo", "="])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Empty prefix with equals parsing")
 
@@ -111,7 +111,7 @@ def test_benchmark_example():
 	"""Test parsing the benchmark example from README (updated for new format)"""
 	result = parse("|silent=python -m http.server")
 	expected = ParsedCommand(
-		None, None, 0.0, [], None, ["silent"], ["python", "-m", "http.server"]
+		None, None, 0.0, [], None, None, ["silent"], ["python", "-m", "http.server"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 
@@ -119,7 +119,7 @@ def test_benchmark_example():
 		"|end=ab -n1000 http://localhost:8000/"
 	)  # Delay removed - now handled by dependencies
 	expected = ParsedCommand(
-		None, None, 0.0, [], None, ["end"], ["ab", "-n1000", "http://localhost:8000/"]
+		None, None, 0.0, [], None, None, ["end"], ["ab", "-n1000", "http://localhost:8000/"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Benchmark example parsing")
@@ -128,7 +128,7 @@ def test_benchmark_example():
 def test_sequential_example():
 	"""Test parsing the sequential example from README (updated for new format)"""
 	result = parse("A=python -m http.server")
-	expected = ParsedCommand("A", None, 0.0, [], None, [], ["python", "-m", "http.server"])
+	expected = ParsedCommand("A", None, 0.0, [], None, None, [], ["python", "-m", "http.server"])
 	assert result == expected, f"Expected {expected}, got {result}"
 
 	# In new format, dependencies replace the old delay syntax
@@ -147,6 +147,7 @@ def test_sequential_example():
 			)()
 		],
 		None,
+		None,
 		[],
 		["ab", "-n1000", "http://localhost:8000/"],
 	)
@@ -162,7 +163,7 @@ def test_command_with_paths():
 	"""Test parsing commands with file paths"""
 	result = parse("/usr/bin/python3 /path/to/script.py")
 	expected = ParsedCommand(
-		None, None, 0.0, [], None, [], ["/usr/bin/python3", "/path/to/script.py"]
+		None, None, 0.0, [], None, None, [], ["/usr/bin/python3", "/path/to/script.py"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ File paths parsing")
@@ -178,6 +179,7 @@ def test_command_with_flags():
 		None,
 		0.0,
 		[],
+		None,
 		None,
 		[],
 		[

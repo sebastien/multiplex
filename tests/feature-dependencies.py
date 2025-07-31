@@ -18,7 +18,7 @@ from multiplex import parse, ParsedCommand, Dependency, parse_dependencies
 def test_basic_command_no_dependencies():
 	"""Test parsing a basic command without dependencies"""
 	result = parse("echo hello")
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["echo", "hello"])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["echo", "hello"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Basic command parsing (no dependencies)")
 
@@ -26,7 +26,7 @@ def test_basic_command_no_dependencies():
 def test_named_command_no_dependencies():
 	"""Test parsing a named command without dependencies"""
 	result = parse("A=echo hello")
-	expected = ParsedCommand("A", None, 0.0, [], None, [], ["echo", "hello"])
+	expected = ParsedCommand("A", None, 0.0, [], None, None, [], ["echo", "hello"])
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Named command parsing (no dependencies)")
 
@@ -34,7 +34,7 @@ def test_named_command_no_dependencies():
 def test_simple_dependency():
 	"""Test parsing a command with a simple dependency"""
 	result = parse(":A=echo hello")
-	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [])], None, [], ["echo", "hello"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [])], None, None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Simple dependency parsing")
@@ -43,7 +43,7 @@ def test_simple_dependency():
 def test_dependency_with_start_indicator():
 	"""Test parsing a dependency with & (wait for start)"""
 	result = parse(":A&=echo hello")
-	expected = ParsedCommand(None, None, 0.0, [Dependency("A", True, [])], None, [], ["echo", "hello"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", True, [])], None, None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with start indicator parsing")
@@ -52,7 +52,7 @@ def test_dependency_with_start_indicator():
 def test_dependency_with_delay():
 	"""Test parsing a dependency with delay"""
 	result = parse(":A+1s=echo hello")
-	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [1.0])], None, [], ["echo", "hello"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [1.0])], None, None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with delay parsing")
@@ -61,7 +61,7 @@ def test_dependency_with_delay():
 def test_dependency_with_start_and_delay():
 	"""Test parsing a dependency with & and delay"""
 	result = parse(":A&+500ms=echo hello")
-	expected = ParsedCommand(None, None, 0.0, [Dependency("A", True, [0.5])], None, [], ["echo", "hello"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", True, [0.5])], None, None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Dependency with start indicator and delay parsing")
@@ -70,7 +70,7 @@ def test_dependency_with_start_and_delay():
 def test_multiple_delays_on_dependency():
 	"""Test parsing a dependency with multiple delays"""
 	result = parse(":A+1s+500ms=echo hello")
-	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [1.0, 0.5])], None, [], ["echo", "hello"]
+	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, [1.0, 0.5])], None, None, [], ["echo", "hello"]
 	)
 	assert result == expected, f"Expected {expected}, got {result}"
 	print("✓ Multiple delays on dependency parsing")
@@ -80,6 +80,7 @@ def test_multiple_dependencies():
 	"""Test parsing multiple dependencies"""
 	result = parse(":A:B&=echo hello")
 	expected = ParsedCommand(None, None, 0.0, [Dependency("A", False, []), Dependency("B", True, [])],
+		None,
 		None,
 		[],
 		["echo", "hello"],
@@ -97,6 +98,7 @@ def test_complex_dependencies():
 			Dependency("C", False, [120.0]),
 		],
 		None,
+		None,
 		[],
 		["echo", "hello"],
 	)
@@ -109,6 +111,7 @@ def test_full_command_format():
 	result = parse("worker#blue:A+1s:B&|silent=python script.py")
 	expected = ParsedCommand("worker", "blue", 0.0, [Dependency("A", False, [1.0]), Dependency("B", True, [])],
 		None,
+		None,
 		["silent"],
 		["python", "script.py"],
 	)
@@ -120,6 +123,7 @@ def test_dependencies_with_actions():
 	"""Test parsing dependencies combined with actions"""
 	result = parse(":DB:API&+2s|silent|end=echo done")
 	expected = ParsedCommand(None, None, 0.0, [Dependency("DB", False, []), Dependency("API", True, [2.0])],
+		None,
 		None,
 		["silent", "end"],
 		["echo", "done"],
@@ -169,22 +173,22 @@ def test_backward_compatibility():
 	"""Test that commands without dependencies still work"""
 	# Basic commands
 	result = parse("echo test")
-	expected = ParsedCommand(None, None, 0.0, [], None, [], ["echo", "test"])
+	expected = ParsedCommand(None, None, 0.0, [], None, None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 
 	# Named commands
 	result = parse("A=echo test")
-	expected = ParsedCommand("A", None, 0.0, [], None, [], ["echo", "test"])
+	expected = ParsedCommand("A", None, 0.0, [], None, None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 
 	# Commands with color
 	result = parse("A#red=echo test")
-	expected = ParsedCommand("A", "red", 0.0, [], None, [], ["echo", "test"])
+	expected = ParsedCommand("A", "red", 0.0, [], None, None, [], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 
 	# Commands with actions
 	result = parse("A#red|silent=echo test")
-	expected = ParsedCommand("A", "red", 0.0, [], None, ["silent"], ["echo", "test"])
+	expected = ParsedCommand("A", "red", 0.0, [], None, None, ["silent"], ["echo", "test"])
 	assert result == expected, f"Expected {expected}, got {result}"
 
 	print("✓ Backward compatibility")

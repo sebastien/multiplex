@@ -464,6 +464,9 @@ class Runner:
 		self.process_outputs: dict[
 			str, dict[int, list[bytes]]
 		] = {}  # Track process outputs by key and stream
+		self.output_events: dict[
+			str, dict[int, threading.Event]
+		] = {}  # Track first output events by key and stream
 		self.formatter: Formatter = Formatter(timestamp=timestamp, relative=relative)
 		self.graceful_timeout: float = 5.0  # Default graceful shutdown timeout
 		self.force_timeout: float = 2.0  # Additional time before SIGKILL
@@ -538,6 +541,13 @@ class Runner:
 			# Wait for the event to be set (which means the process has started)
 			event.wait()
 
+	def _waitForOutput(self, proc: str, stream: int) -> None:
+		"""Wait for a named process to produce output on the specified stream"""
+		if proc in self.output_events and stream in self.output_events[proc]:
+			event = self.output_events[proc][stream]
+			# Wait for the event to be set (which means the process has produced output)
+			event.wait()
+
 	def _waitForEvent(self, event: str, *, delay: int | None = None) -> None:
 		raise NotImplementedError
 
@@ -549,6 +559,7 @@ class Runner:
 		start_delay: float = 0.0,
 		dependencies: list[Dependency] | None = None,
 		redirects: Redirect | None = None,
+		start_on_output: StartOnOutput | None = None,
 		actions: list[str] | None = None,
 	) -> Command:
 		key = key or str(len(self.commands))
@@ -561,6 +572,9 @@ class Runner:
 
 		# Initialize output tracking for this process
 		self.process_outputs[key] = {1: [], 2: []}  # stdout and stderr buffers
+		
+		# Initialize output events for this process
+		self.output_events[key] = {1: threading.Event(), 2: threading.Event()}
 
 		# Handle redirects - create stdin pipe if needed
 		stdin_pipe = None
@@ -610,6 +624,16 @@ class Runner:
 
 			# Store the stop event so we can signal it when this command ends
 			cmd.redirect_stop_event = redirect_stop_event
+
+		# Handle start-on-output conditions
+		if start_on_output:
+			for source in start_on_output.sources:
+				# Ensure the source process has output events initialized
+				if source.key not in self.output_events:
+					self.output_events[source.key] = {1: threading.Event(), 2: threading.Event()}
+				
+				# Wait for the specified stream to produce output
+				self._waitForOutput(source.key, source.stream)
 
 		# Handle dependencies
 		if dependencies:
@@ -698,8 +722,14 @@ class Runner:
 						# Determine which stream this is (stdout=1, stderr=2)
 						if process.stdout and fd == process.stdout.fileno():
 							self.process_outputs[capture_key][1].append(chunk)
+							# Signal first output event for stdout if not already set
+							if capture_key in self.output_events and not self.output_events[capture_key][1].is_set():
+								self.output_events[capture_key][1].set()
 						elif process.stderr and fd == process.stderr.fileno():
 							self.process_outputs[capture_key][2].append(chunk)
+							# Signal first output event for stderr if not already set
+							if capture_key in self.output_events and not self.output_events[capture_key][2].is_set():
+								self.output_events[capture_key][2].set()
 
 					if handler := channels[fd][1]:
 						handler(chunk)
@@ -935,7 +965,7 @@ def strip_ansi(data: str) -> str:
 
 
 RE_LINE = re.compile(
-	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(?P<start_delay>\+[^:=|<]+?)?(?P<redirects><[^:=|]+?)?(?P<deps>:[^|=]+?)?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
+	r"^((?P<key>[\dA-Za-z_]+)?(#(?P<color>[A-Fa-f0-9]{6}|[A-Za-z]+))?(?P<start_delay>\+[^:=|<>]+?)?(?P<redirects><[^:=|>]+?)?(?P<start_on_output>>[^:=|<]+?)?(?P<deps>:[^|=]+?)?(?P<action>(\|[a-z]+)+)?=)?(?P<command>.+)$"
 )
 
 
@@ -960,6 +990,19 @@ class Redirect(NamedTuple):
 	sources: list[RedirectSource]  # List of sources to combine for stdin
 
 
+class StartOnOutputSource(NamedTuple):
+	"""Data structure holding a single start-on-output source."""
+
+	key: str  # Process name to monitor for output
+	stream: int  # Stream number: 1=stdout, 2=stderr
+
+
+class StartOnOutput(NamedTuple):
+	"""Data structure holding a parsed start-on-output condition."""
+
+	sources: list[StartOnOutputSource]  # List of sources to monitor for output
+
+
 class ParsedCommand(NamedTuple):
 	"""Data structure holding a parsed command."""
 
@@ -968,6 +1011,7 @@ class ParsedCommand(NamedTuple):
 	start_delay: float  # Delay before starting this command
 	dependencies: list[Dependency]  # List of dependencies to wait for
 	redirects: Redirect | None  # Stdin redirect configuration
+	start_on_output: StartOnOutput | None  # Start-on-output condition
 	actions: list[str]
 	command: list[str]
 
@@ -1067,6 +1111,80 @@ def parse_redirects(redirects_str: str) -> Redirect | None:
 
 	if sources:
 		return Redirect(sources)
+
+	return None
+
+
+def parse_start_on_output(start_on_output_str: str) -> StartOnOutput | None:
+	"""Parse start-on-output string into StartOnOutput object.
+
+	Start-on-output conditions are in the format: >SOURCE... where SOURCE can be:
+	- A - stdout from process A
+	- 2A - stderr from process A
+	- (1A,2A) - stdout and stderr from process A
+	- (A,B) - stdout from processes A and B
+
+	Examples:
+	- ">A" - start when A outputs to stdout
+	- ">2A" - start when A outputs to stderr
+	- ">(1A,2A)" - start when A outputs to either stdout or stderr
+	- ">(A,B)" - start when either A or B outputs to stdout
+	"""
+	if not start_on_output_str or not start_on_output_str.startswith(">"):
+		return None
+
+	# Remove leading '>'
+	sources_str = start_on_output_str[1:]
+
+	sources = []
+
+	# Handle parentheses format: (1A,2A) or (A,B)
+	if sources_str.startswith("(") and sources_str.endswith(")"):
+		# Remove parentheses and split by commas
+		inner = sources_str[1:-1]
+		source_parts = [s.strip() for s in inner.split(",")]
+
+		for source_part in source_parts:
+			if not source_part:
+				continue
+
+			# Check if it starts with a stream number
+			if source_part.startswith("1"):
+				# 1A format - explicit stdout
+				key = source_part[1:]
+				stream = 1
+			elif source_part.startswith("2"):
+				# 2A format - stderr
+				key = source_part[1:]
+				stream = 2
+			else:
+				# A format - default to stdout
+				key = source_part
+				stream = 1
+
+			if key:
+				sources.append(StartOnOutputSource(key, stream))
+
+	else:
+		# Simple format: A, 2A, 1A
+		if sources_str.startswith("2"):
+			# 2A format - stderr
+			key = sources_str[1:]
+			stream = 2
+		elif sources_str.startswith("1"):
+			# 1A format - explicit stdout
+			key = sources_str[1:]
+			stream = 1
+		else:
+			# A format - default to stdout
+			key = sources_str
+			stream = 1
+
+		if key:
+			sources.append(StartOnOutputSource(key, stream))
+
+	if sources:
+		return StartOnOutput(sources)
 
 	return None
 
@@ -1193,9 +1311,10 @@ def parse_delay(delay_str: str) -> float | str:
 def parse(line: str) -> ParsedCommand:
 	"""Parses a command line with the new delay and dependency-based format.
 
-	Format: [KEY][#COLOR][+DELAY…][:DEP…][|ACTION…]=COMMAND
+	Format: [KEY][#COLOR][+DELAY…][<REDIRECT…][>START_ON_OUTPUT…][:DEP…][|ACTION…]=COMMAND
 	Where DEP is: [KEY][&][+DELAY…]
 	Where REDIRECT is: <A, <2A, <(1A,2A), <(A,B), etc.
+	Where START_ON_OUTPUT is: >A, >2A, >(1A,2A), >(A,B), etc.
 	"""
 	match = RE_LINE.match(line)
 	if not match:
@@ -1205,6 +1324,7 @@ def parse(line: str) -> ParsedCommand:
 	color = match.group("color")
 	start_delay_str = match.group("start_delay")
 	redirects_str = match.group("redirects")
+	start_on_output_str = match.group("start_on_output")
 	deps_str = match.group("deps")
 	command = match.group("command")
 	actions = (match.group("action") or "").split("|")[1:]
@@ -1221,11 +1341,14 @@ def parse(line: str) -> ParsedCommand:
 	# Parse redirects
 	redirects = parse_redirects(redirects_str or "")
 
+	# Parse start-on-output
+	start_on_output = parse_start_on_output(start_on_output_str or "")
+
 	# Parse dependencies
 	dependencies = parse_dependencies(deps_str or "")
 
 	return ParsedCommand(
-		key, color, start_delay, dependencies, redirects, actions, [_ for _ in splitargs(command)]
+		key, color, start_delay, dependencies, redirects, start_on_output, actions, [_ for _ in splitargs(command)]
 	)
 
 
@@ -1329,6 +1452,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 			out.write(f"- start_delay: {parsed_cmd.start_delay}\n")
 			out.write(f"- dependencies: {parsed_cmd.dependencies}\n")
 			out.write(f"- redirects: {parsed_cmd.redirects}\n")
+			out.write(f"- start_on_output: {parsed_cmd.start_on_output}\n")
 			out.write(f"- actions: {parsed_cmd.actions}\n")
 			out.write(f"- cmd: {parsed_cmd.command}\n")
 	else:
@@ -1348,6 +1472,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 				start_delay=parsed_cmd.start_delay,
 				dependencies=parsed_cmd.dependencies,
 				redirects=parsed_cmd.redirects,
+				start_on_output=parsed_cmd.start_on_output,
 				actions=parsed_cmd.actions,
 			)
 		if args.timeout:

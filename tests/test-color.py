@@ -19,11 +19,12 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with named color."""
 		result = parse("a#red=ls -la")
 		expected = ParsedCommand(
-			start_delay=0.0,
-		key="a",
+			key="a",
 			color="red",
+			start_delay=0.0,
 			dependencies=[],
 			redirects=None,
+			start_on_output=None,
 			actions=[],
 			command=["ls", "-la"],
 		)
@@ -33,11 +34,12 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with hex color."""
 		result = parse("a#00FF00=ls -la")
 		expected = ParsedCommand(
-			start_delay=0.0,
-		key="a",
+			key="a",
 			color="00FF00",
+			start_delay=0.0,
 			dependencies=[],
 			redirects=None,
+			start_on_output=None,
 			actions=[],
 			command=["ls", "-la"],
 		)
@@ -47,11 +49,12 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with mixed case hex color."""
 		result = parse("b#AbCdEf=echo hello")
 		expected = ParsedCommand(
-			start_delay=0.0,
-		key="b",
+			key="b",
 			color="AbCdEf",
+			start_delay=0.0,
 			dependencies=[],
 			redirects=None,
+			start_on_output=None,
 			actions=[],
 			command=["echo", "hello"],
 		)
@@ -61,11 +64,12 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command without color specification."""
 		result = parse("a=ls -la")
 		expected = ParsedCommand(
-			start_delay=0.0,
-		key="a",
+			key="a",
 			color=None,
+			start_delay=0.0,
 			dependencies=[],
 			redirects=None,
+			start_on_output=None,
 			actions=[],
 			command=["ls", "-la"],
 		)
@@ -75,13 +79,14 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with both color and delay (now as dependency)."""
 		result = parse("a#blue:DELAY+5s=ls -la")  # Updated format
 		expected = ParsedCommand(
-			start_delay=0.0,
-		key="a",
+			key="a",
 			color="blue",
+			start_delay=0.0,
 			dependencies=[
 				parse(":DELAY+5s=dummy").dependencies[0]  # Get the dependency structure
 			],
 			redirects=None,
+			start_on_output=None,
 			actions=[],
 			command=["ls", "-la"],
 		)
@@ -96,11 +101,12 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with color and actions."""
 		result = parse("a#cyan|silent=ls -la")
 		expected = ParsedCommand(
-			start_delay=0.0,
-		key="a",
+			key="a",
 			color="cyan",
+			start_delay=0.0,
 			dependencies=[],
 			redirects=None,
+			start_on_output=None,
 			actions=["silent"],
 			command=["ls", "-la"],
 		)
@@ -122,11 +128,12 @@ class TestColorParsing(unittest.TestCase):
 		"""Test parsing command with no key and no color."""
 		result = parse("ls -la")
 		expected = ParsedCommand(
-			start_delay=0.0,
-		key=None,
+			key=None,
 			color=None,
+			start_delay=0.0,
 			dependencies=[],
 			redirects=None,
+			start_on_output=None,
 			actions=[],
 			command=["ls", "-la"],
 		)
