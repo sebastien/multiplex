@@ -409,5 +409,11 @@ Each example includes explanatory comments and demonstrates specific multiplex f
   multiplex can be run from the CLI directly without a supporting file and offers
   more flexibility in orchestrating the processes.
 
+- [overmind](https://github.com/DarthSim/overmind) similar to *foreman*, but
+  starts processes in a tmux session.
+
 - [mprocs](https://github.com/pvolok/mprocs) runs multiple processes in parallel, and provides
   a TUI to navigate between each.
+
+- [multiplex](https://github.com/dankilman/multiplex), Python package with a similar name and original purpose, but
+   with a focus on TUI/interactive, and no ability to orchestrate.
