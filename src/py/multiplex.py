@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.13
+#!/usr/bin/env python3
 from __future__ import annotations
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -242,7 +242,9 @@ class Command:
 		self.pid: int | None = pid
 		self.pgid: int | None = None  # Process group ID
 		self._children: set[int] = set()
-		self.redirect_stop_event: threading.Event | None = None  # For stopping redirect threads
+		self.redirect_stop_event: threading.Event | None = (
+			None  # For stopping redirect threads
+		)
 		# Callbacks
 		self.onStart: list[StartCallback | None] = []
 		self.onOut: list[OutCallback | None] = []
@@ -338,7 +340,7 @@ class Formatter:
 		"""Generate timestamp prefix for log entries"""
 		if not self.timestamp or not self.start_time:
 			return b""
-		
+
 		current_time = datetime.datetime.now()
 		if self.relative:
 			# Calculate time relative to start
@@ -351,7 +353,7 @@ class Formatter:
 		else:
 			# Use current time
 			timestamp_str = current_time.strftime("%H:%M:%S")
-		
+
 		return bytes(f"{timestamp_str}|", "utf8")
 
 	def _get_color_code(self, color: str | None) -> str:
@@ -511,9 +513,9 @@ class Runner:
 
 	def doEnd(self, command: Command, data: int) -> None:
 		# Signal redirect threads to stop for this command
-		if hasattr(command, 'redirect_stop_event') and command.redirect_stop_event:
+		if hasattr(command, "redirect_stop_event") and command.redirect_stop_event:
 			command.redirect_stop_event.set()
-		
+
 		if not command.onEnd:
 			self.formatter.end(command, data)
 		else:
@@ -572,7 +574,7 @@ class Runner:
 
 		# Initialize output tracking for this process
 		self.process_outputs[key] = {1: [], 2: []}  # stdout and stderr buffers
-		
+
 		# Initialize output events for this process
 		self.output_events[key] = {1: threading.Event(), 2: threading.Event()}
 
@@ -630,8 +632,11 @@ class Runner:
 			for source in start_on_output.sources:
 				# Ensure the source process has output events initialized
 				if source.key not in self.output_events:
-					self.output_events[source.key] = {1: threading.Event(), 2: threading.Event()}
-				
+					self.output_events[source.key] = {
+						1: threading.Event(),
+						2: threading.Event(),
+					}
+
 				# Wait for the specified stream to produce output
 				self._waitForOutput(source.key, source.stream)
 
@@ -723,12 +728,18 @@ class Runner:
 						if process.stdout and fd == process.stdout.fileno():
 							self.process_outputs[capture_key][1].append(chunk)
 							# Signal first output event for stdout if not already set
-							if capture_key in self.output_events and not self.output_events[capture_key][1].is_set():
+							if (
+								capture_key in self.output_events
+								and not self.output_events[capture_key][1].is_set()
+							):
 								self.output_events[capture_key][1].set()
 						elif process.stderr and fd == process.stderr.fileno():
 							self.process_outputs[capture_key][2].append(chunk)
 							# Signal first output event for stderr if not already set
-							if capture_key in self.output_events and not self.output_events[capture_key][2].is_set():
+							if (
+								capture_key in self.output_events
+								and not self.output_events[capture_key][2].is_set()
+							):
 								self.output_events[capture_key][2].set()
 
 					if handler := channels[fd][1]:
@@ -1335,7 +1346,9 @@ def parse(line: str) -> ParsedCommand:
 		# Remove the '+' prefix and parse
 		delay_value = parse_delay(start_delay_str[1:])
 		if isinstance(delay_value, str):
-			raise SyntaxError(f"Start delay must be a time value, not a named delay: {start_delay_str}")
+			raise SyntaxError(
+				f"Start delay must be a time value, not a named delay: {start_delay_str}"
+			)
 		start_delay = delay_value
 
 	# Parse redirects
@@ -1348,7 +1361,14 @@ def parse(line: str) -> ParsedCommand:
 	dependencies = parse_dependencies(deps_str or "")
 
 	return ParsedCommand(
-		key, color, start_delay, dependencies, redirects, start_on_output, actions, [_ for _ in splitargs(command)]
+		key,
+		color,
+		start_delay,
+		dependencies,
+		redirects,
+		start_on_output,
+		actions,
+		[_ for _ in splitargs(command)],
 	)
 
 
@@ -1418,7 +1438,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 
 	# Custom parse the time argument first
 	filtered_argv, time_mode = custom_parse_time_arg(argv)
-	
+
 	# Create a mutually exclusive group for time options
 	time_group = oparser.add_mutually_exclusive_group()
 	time_group.add_argument(
@@ -1430,7 +1450,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 	)
 	time_group.add_argument(
 		"--time-relative",
-		action="store_const", 
+		action="store_const",
 		const="relative",
 		dest="time_mode",
 		help="Add relative timestamps (00:00:00 start)",
@@ -1438,7 +1458,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 
 	# We create the parse and register the options
 	args = oparser.parse_args(args=filtered_argv)
-	
+
 	# Override time_mode with our custom parsed value if it was found
 	if time_mode is not None:
 		args.time_mode = time_mode
@@ -1460,7 +1480,7 @@ def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 		# Determine timestamp settings from --time argument
 		timestamp_enabled = args.time_mode is not None
 		relative_timestamps = args.time_mode == "relative"
-		
+
 		runner = Runner(timestamp=timestamp_enabled, relative=relative_timestamps)
 		for command in args.commands:
 			# Parse the command using the new format
