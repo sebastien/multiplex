@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
-import sys
-import os
+"""Module: test_parser — tests multiplex behavior."""
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
+from __future__ import annotations
 
-from multiplex import parse, ParsedCommand
+from multiplex import ParsedCommand, parse
 
 
 def test_basic_command():
@@ -154,7 +152,7 @@ def test_sequential_example():
 	# Simplified test for sequential dependency
 	result = parse(":A=ab -n1000 http://localhost:8000/")
 	assert result.dependencies[0].key == "A"
-	assert result.dependencies[0].wait_for_start == False
+	assert not result.dependencies[0].wait_for_start
 	assert result.command == ["ab", "-n1000", "http://localhost:8000/"]
 	print("✓ Sequential example with dependency parsing")
 
@@ -216,7 +214,4 @@ def run_tests():
 	test_command_with_flags()
 
 	print("\n✅ All tests passed!")
-
-
-if __name__ == "__main__":
-	run_tests()
+# EOF

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Integration tests for filesystem-backed detached runs."""
 
 from __future__ import annotations
@@ -9,7 +8,6 @@ import tempfile
 import time
 from pathlib import Path
 
-
 ROOT = Path(__file__).parent.parent
 MULTIPLEX = ROOT / "src" / "py" / "multiplex.py"
 
@@ -19,8 +17,7 @@ def invoke(directory: Path, *args: str) -> subprocess.CompletedProcess[str]:
 		[sys.executable, str(MULTIPLEX), *args],
 		cwd=directory,
 		text=True,
-		stdout=subprocess.PIPE,
-		stderr=subprocess.PIPE,
+		capture_output=True,
 		check=False,
 	)
 
@@ -72,7 +69,4 @@ def test_detached_run_can_be_inspected_tailed_stopped_and_pruned() -> None:
 		while (directory / ".multiplex" / "dev").exists() and time.monotonic() < deadline:
 			time.sleep(0.03)
 		assert not (directory / ".multiplex" / "dev").exists()
-
-
-if __name__ == "__main__":
-	test_detached_run_can_be_inspected_tailed_stopped_and_pruned()
+# EOF

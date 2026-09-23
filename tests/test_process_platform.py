@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test suite for macOS compatibility of multiplex.py
 
@@ -6,16 +5,17 @@ This test verifies that the Proc class methods work correctly on both
 Linux (with /proc) and macOS (with fallback implementations).
 """
 
+from __future__ import annotations
+
 import os
-import sys
 import subprocess
+import sys
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add the src directory to the path to import multiplex
-sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "py"))
 import multiplex
 
 
@@ -46,9 +46,9 @@ class TestMacOSCompatibility(unittest.TestCase):
 
 	def test_proc_availability_detection(self):
 		"""Test that platform detection works correctly."""
-		# The _HAS_PROC variable should be set based on /proc existence
+		# The Proc.available flag should be set based on /proc existence
 		has_proc_dir = Path("/proc").exists()
-		self.assertEqual(multiplex._HAS_PROC, has_proc_dir)
+		self.assertEqual(multiplex.Proc.available, has_proc_dir)
 
 	def test_proc_exists_with_valid_pid(self):
 		"""Test Proc.exists() with a valid PID."""
@@ -113,7 +113,7 @@ class TestMacOSCompatibility(unittest.TestCase):
 		self.assertIsInstance(children, set)
 		# Children set might be empty for our simple test process
 
-	@patch("multiplex._HAS_PROC", False)
+	@patch("multiplex.Proc.available", False)
 	def test_fallback_implementation_forced(self):
 		"""Test that fallback implementations work when forced."""
 		# Force using fallback implementations
@@ -134,8 +134,8 @@ class TestMacOSCompatibility(unittest.TestCase):
 	def test_fallback_shell_command_failures(self):
 		"""Test fallback behavior when shell commands fail."""
 		# Mock shell to return None (command failure)
-		with patch("multiplex.shell", return_value=None):
-			with patch("multiplex._HAS_PROC", False):
+		with patch("multiplex.Proc.shell", return_value=None):
+			with patch("multiplex.Proc.available", False):
 				# parent() should return None when ps fails
 				self.assertIsNone(multiplex.Proc.parent(self.test_pid))
 
@@ -147,8 +147,8 @@ class TestMacOSCompatibility(unittest.TestCase):
 	def test_fallback_shell_command_malformed_output(self):
 		"""Test fallback behavior when shell commands return malformed output."""
 		# Mock shell to return malformed data
-		with patch("multiplex.shell", return_value=b"invalid output format"):
-			with patch("multiplex._HAS_PROC", False):
+		with patch("multiplex.Proc.shell", return_value=b"invalid output format"):
+			with patch("multiplex.Proc.available", False):
 				# parent() should return None when ps output is malformed
 				self.assertIsNone(multiplex.Proc.parent(self.test_pid))
 
@@ -164,7 +164,7 @@ class TestMacOSCompatibility(unittest.TestCase):
 		cmd.pid = self.test_pid
 
 		# Test that command can check if it's running
-		self.assertTrue(cmd.isRunning)
+		self.assertTrue(cmd.is_running)
 
 		# Test parent PID access
 		self.assertIsNotNone(cmd.ppid)
@@ -200,13 +200,13 @@ class TestPlatformSpecificBehavior(unittest.TestCase):
 
 		try:
 			# Test with /proc enabled
-			with patch("multiplex._HAS_PROC", True):
+			with patch("multiplex.Proc.available", True):
 				exists_proc = multiplex.Proc.exists(test_pid)
 				parent_proc = multiplex.Proc.parent(test_pid)
 				mem_proc = multiplex.Proc.mem(test_pid)
 
 			# Test with fallback enabled
-			with patch("multiplex._HAS_PROC", False):
+			with patch("multiplex.Proc.available", False):
 				exists_fallback = multiplex.Proc.exists(test_pid)
 				parent_fallback = multiplex.Proc.parent(test_pid)
 				mem_fallback = multiplex.Proc.mem(test_pid)
@@ -231,13 +231,4 @@ class TestPlatformSpecificBehavior(unittest.TestCase):
 					test_process.wait(timeout=5)
 				except (subprocess.TimeoutExpired, ProcessLookupError):
 					pass
-
-
-if __name__ == "__main__":
-	print(f"Running macOS compatibility tests...")
-	print(f"Platform has /proc: {multiplex._HAS_PROC}")
-	print(f"Python version: {sys.version}")
-	print(f"Platform: {sys.platform}")
-	print()
-
-	unittest.main(verbosity=2)
+# EOF

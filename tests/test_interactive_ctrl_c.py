@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+"""Module: test_interactive_ctrl_c — tests multiplex behavior."""
+
+from __future__ import annotations
+
 import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
-
-from multiplex import run, join
+from multiplex import join, run
 
 
 def test_interactive_ctrl_c():
@@ -23,12 +23,9 @@ def test_interactive_ctrl_c():
 	except KeyboardInterrupt:
 		print("\nKeyboardInterrupt caught! Cleaning up...")
 		# The signal handler should have already terminated processes
-		if not cmd.isRunning:
+		if not cmd.is_running:
 			print("✓ Process was properly terminated by signal handler")
 		else:
 			print("✗ Process is still running after Ctrl-C")
 		sys.exit(0)
-
-
-if __name__ == "__main__":
-	test_interactive_ctrl_c()
+# EOF

@@ -1,15 +1,12 @@
-#!/usr/bin/env python3
 """Test cases for color functionality in multiplex."""
 
-import sys
-import os
+from __future__ import annotations
+
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 # Add src directory to path so we can import multiplex
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "py"))
-
-from multiplex import parse, ParsedCommand, Formatter, Command
+from multiplex import Command, Formatter, ParsedCommand, parse
 
 
 class TestColorParsing(unittest.TestCase):
@@ -78,7 +75,7 @@ class TestColorParsing(unittest.TestCase):
 	def test_parse_command_with_color_and_delay(self):
 		"""Test parsing command with both color and delay (now as dependency)."""
 		result = parse("a#blue:DELAY+5s=ls -la")  # Updated format
-		expected = ParsedCommand(
+		ParsedCommand(
 			key="a",
 			color="blue",
 			start_delay=0.0,
@@ -120,7 +117,7 @@ class TestColorParsing(unittest.TestCase):
 		self.assertEqual(result.color, "magenta")
 		self.assertEqual(len(result.dependencies), 1)
 		self.assertEqual(result.dependencies[0].key, "DELAY")
-		self.assertEqual(result.dependencies[0].delays, [2.5])  # 2s500ms = 2.5s
+		self.assertEqual(result.dependencies[0].delays, [2.5])	# 2s500ms = 2.5s
 		self.assertEqual(result.actions, ["silent"])
 		self.assertEqual(result.command, ["python", "script.py"])
 
@@ -167,9 +164,9 @@ class TestColorFormatter(unittest.TestCase):
 	def test_get_color_code_invalid(self):
 		"""Test handling of invalid color codes."""
 		self.assertEqual(self.formatter._get_color_code("invalid"), "")
-		self.assertEqual(self.formatter._get_color_code("FFF"), "")  # Too short
-		self.assertEqual(self.formatter._get_color_code("FFFFFFF"), "")  # Too long
-		self.assertEqual(self.formatter._get_color_code("GGGGGG"), "")  # Invalid hex
+		self.assertEqual(self.formatter._get_color_code("FFF"), "")	 # Too short
+		self.assertEqual(self.formatter._get_color_code("FFFFFFF"), "")	 # Too long
+		self.assertEqual(self.formatter._get_color_code("GGGGGG"), "")	# Invalid hex
 		self.assertEqual(self.formatter._get_color_code(None), "")
 
 	def test_apply_color_named(self):
@@ -215,7 +212,4 @@ class TestColorFormatter(unittest.TestCase):
 		# Check that no ANSI codes are present
 		ansi_found = any(b"\033[" in call[0][0] for call in calls)
 		self.assertFalse(ansi_found, "ANSI codes found in non-colored output")
-
-
-if __name__ == "__main__":
-	unittest.main()
+# EOF

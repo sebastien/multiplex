@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test cases for redirect functionality.
 
 This tests the parsing and behavior of the redirect syntax for stdin redirection:
@@ -10,12 +9,9 @@ This tests the parsing and behavior of the redirect syntax for stdin redirection
 Format: [KEY][#COLOR][<REDIRECT…][:DEP…][|ACTION…]=COMMAND
 """
 
-import sys
-import os
+from __future__ import annotations
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
-
-from multiplex import parse, ParsedCommand, Redirect, RedirectSource, Dependency
+from multiplex import Dependency, ParsedCommand, Redirect, RedirectSource, parse
 
 
 def test_no_redirect():
@@ -180,7 +176,7 @@ def test_full_format_with_redirect():
 	assert result.color == "blue"
 	assert len(result.dependencies) == 1
 	assert result.dependencies[0].key == "C"
-	assert result.dependencies[0].wait_for_start == True
+	assert result.dependencies[0].wait_for_start
 	assert len(result.redirects.sources) == 2
 	assert "silent" in result.actions
 	print("✓ Full format with redirect parsing")
@@ -226,28 +222,8 @@ def test_parse_redirects_function():
 	redirect = parse_redirects("")
 	assert redirect is None
 
-	redirect = parse_redirects("A")  # No leading <
+	redirect = parse_redirects("A")	 # No leading <
 	assert redirect is None
 
 	print("✓ parse_redirects function tests")
-
-
-if __name__ == "__main__":
-	print("Running redirect parsing tests...\n")
-
-	test_no_redirect()
-	test_simple_stdout_redirect()
-	test_explicit_stdout_redirect()
-	test_stderr_redirect()
-	test_combined_streams_redirect()
-	test_multiple_processes_redirect()
-	test_complex_mixed_redirect()
-	test_redirect_with_key()
-	test_redirect_with_color()
-	test_redirect_with_dependencies()
-	test_redirect_with_actions()
-	test_full_format_with_redirect()
-	test_redirect_edge_cases()
-	test_parse_redirects_function()
-
-	print("\n✅ All redirect parsing tests passed!")
+# EOF

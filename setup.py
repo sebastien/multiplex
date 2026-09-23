@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
-import sys
-from setuptools import setup
+"""Module: setup — package metadata for multiplex."""
+
+from __future__ import annotations
+
 from pathlib import Path
 
-if sys.version_info < (3, 8):
-	sys.exit("Error: multiplex requires Python 3.8 or later")
+from setuptools import setup
 
 README_PATH = Path(__file__).parent / "README.md"
 with open(README_PATH, "r", encoding="utf-8") as f:
@@ -15,9 +15,8 @@ REQUIREMENTS = []
 EXTRAS_REQUIRE = {
 	"dev": [
 		"pytest>=6.0",
-		"black>=22.0",
-		"flake8>=4.0",
-		"mypy>=0.950",
+		"mypy>=1.14",
+		"ruff>=0.9",
 	],
 	"test": [
 		"pytest>=6.0",
@@ -36,12 +35,9 @@ CLASSIFIERS = [
 	"Operating System :: POSIX",
 	"Operating System :: Unix",
 	"Programming Language :: Python :: 3",
-	"Programming Language :: Python :: 3.8",
-	"Programming Language :: Python :: 3.9",
-	"Programming Language :: Python :: 3.10",
-	"Programming Language :: Python :: 3.11",
 	"Programming Language :: Python :: 3.12",
 	"Programming Language :: Python :: 3.13",
+	"Programming Language :: Python :: 3.14",
 	"Programming Language :: Python :: 3 :: Only",
 	"Topic :: Software Development :: Build Tools",
 	"Topic :: System :: Systems Administration",
@@ -103,7 +99,7 @@ setup(
 		],
 	},
 	# Additional metadata for PyPI
-	zip_safe=False,  # For better compatibility
+	zip_safe=False,	 # For better compatibility
 	platforms=["unix", "linux", "osx"],
 	# Test configuration
 	test_suite="tests",
@@ -129,3 +125,4 @@ setup(
 		("share/doc/multiplex", ["README.md", "LICENSE"]),
 	],
 )
+# EOF

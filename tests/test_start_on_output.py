@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test cases for start-on-output functionality.
 
 This tests the parsing and behavior of the start-on-output syntax:
@@ -10,12 +9,15 @@ This tests the parsing and behavior of the start-on-output syntax:
 Format: [KEY][#COLOR][+DELAY…][<REDIRECT…][>START_ON_OUTPUT…][:DEP…][|ACTION…]=COMMAND
 """
 
-import sys
-import os
+from __future__ import annotations
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
-
-from multiplex import parse, ParsedCommand, StartOnOutput, StartOnOutputSource, Dependency
+from multiplex import (
+	Dependency,
+	ParsedCommand,
+	StartOnOutput,
+	StartOnOutputSource,
+	parse,
+)
 
 
 def test_no_start_on_output():
@@ -172,7 +174,7 @@ def test_full_format_with_start_on_output():
 	assert result.start_delay == 1.0
 	assert len(result.dependencies) == 1
 	assert result.dependencies[0].key == "C"
-	assert result.dependencies[0].wait_for_start == True
+	assert result.dependencies[0].wait_for_start
 	assert len(result.start_on_output.sources) == 2
 	assert "silent" in result.actions
 	print("✓ Full format with start-on-output parsing")
@@ -222,24 +224,4 @@ def test_parse_start_on_output_function():
 	assert start_on_output is None
 
 	print("✓ parse_start_on_output function tests")
-
-
-if __name__ == "__main__":
-	print("Running start-on-output parsing tests...\n")
-
-	test_no_start_on_output()
-	test_simple_stdout_start_on_output()
-	test_explicit_stdout_start_on_output()
-	test_stderr_start_on_output()
-	test_combined_streams_start_on_output()
-	test_multiple_processes_start_on_output()
-	test_complex_mixed_start_on_output()
-	test_start_on_output_with_key()
-	test_start_on_output_with_color()
-	test_start_on_output_with_dependencies()
-	test_start_on_output_with_actions()
-	test_full_format_with_start_on_output()
-	test_start_on_output_edge_cases()
-	test_parse_start_on_output_function()
-
-	print("\n✅ All start-on-output parsing tests passed!")
+# EOF

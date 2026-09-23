@@ -1,22 +1,23 @@
-#!/usr/bin/env python3
 """Runtime test for redirect functionality.
 
 This tests the actual execution behavior of redirects to ensure
 that stdin redirection from process outputs works correctly.
 """
 
-import sys
-import os
-import time
-import subprocess
+from __future__ import annotations
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
+import time
 
 from multiplex import Runner, parse
 
-
 # Use a single runner instance to avoid signal handler conflicts
 runner = Runner()
+
+
+def teardown_module() -> None:
+	"""Terminates redirect consumers that may still await redirected input."""
+	runner.terminate(graceful=False)
+	runner.join()
 
 
 def test_simple_stdout_redirect():
@@ -46,7 +47,7 @@ def test_simple_stdout_redirect():
 	)
 
 	# Wait for both to complete
-	runner.join([cmd_a, cmd_b], timeout=2.0)
+	runner.join(cmd_a, cmd_b, timeout=2)
 
 	print("✓ Simple stdout redirect runtime test completed")
 
@@ -78,7 +79,7 @@ def test_stderr_redirect():
 	)
 
 	# Wait for both to complete
-	runner.join([cmd_a, cmd_b], timeout=2.0)
+	runner.join(cmd_a, cmd_b, timeout=2)
 
 	print("✓ Stderr redirect runtime test completed")
 
@@ -112,30 +113,7 @@ def test_combined_streams_redirect():
 	)
 
 	# Wait for both to complete
-	runner.join([cmd_a, cmd_b], timeout=2.0)
+	runner.join(cmd_a, cmd_b, timeout=2)
 
 	print("✓ Combined streams redirect runtime test completed")
-
-
-if __name__ == "__main__":
-	print("Running redirect runtime tests...\n")
-
-	try:
-		test_simple_stdout_redirect()
-		test_stderr_redirect()
-		test_combined_streams_redirect()
-		print("\n✅ All redirect runtime tests completed!")
-		
-		# Clean shutdown - terminate any remaining processes
-		runner.terminate()
-		
-		# Force exit to avoid hanging on threads
-		import os
-		os._exit(0)
-	except Exception as e:
-		print(f"\n❌ Runtime test failed: {e}")
-		import traceback
-
-		traceback.print_exc()
-		import os
-		os._exit(1)
+# EOF

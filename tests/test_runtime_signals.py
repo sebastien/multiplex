@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Comprehensive test suite for multiplex child process management improvements.
 
@@ -10,15 +9,14 @@ This test validates:
 5. Complex process tree handling
 """
 
-import sys
+from __future__ import annotations
+
 import os
 import signal
 import time
-import subprocess
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
-
-from multiplex import run, terminate, Runner, Proc
+import pytest
+from multiplex import Runner
 
 
 def test_all_signals():
@@ -32,27 +30,16 @@ def test_all_signals():
 	]
 
 	for sig, name in signals_to_test:
-		print(f"\n  Testing {name}...")
+		print(f"\n	Testing {name}...")
 		runner = Runner()
 		cmd = runner.run(["sleep", "10"], key=f"test_{name.lower()}")
 
-		assert cmd.isRunning, f"Process should be running for {name} test"
+		assert cmd.is_running, f"Process should be running for {name} test"
 		time.sleep(0.2)
 
-		# Send signal to our process (multiplex)
-		old_handler = signal.signal(sig, runner.onSignal)
-		try:
-			os.kill(os.getpid(), sig)
-			time.sleep(0.5)
-
-			if not cmd.isRunning:
-				print(f"    ✓ {name} properly terminated subprocess")
-			else:
-				print(f"    ✗ {name} did not terminate subprocess")
-				runner.terminate(graceful=False)
-				raise AssertionError(f"{name} handling failed")
-		finally:
-			signal.signal(sig, old_handler)
+		with pytest.raises(SystemExit, match="0"):
+			runner.on_signal(sig, None)
+		assert not cmd.is_running, f"{name} should terminate its subprocess"
 
 
 def test_graceful_shutdown_timing():
@@ -76,7 +63,7 @@ sleep 30
 	os.chmod(script_path, 0o755)
 
 	try:
-		cmd = runner.run(["bash", script_path], key="ignore_test")
+		runner.run(["bash", script_path], key="ignore_test")
 		time.sleep(0.2)
 
 		start_time = time.time()
@@ -85,15 +72,15 @@ sleep 30
 
 		# Should take approximately graceful_timeout + force_timeout
 		expected_time = runner.graceful_timeout + runner.force_timeout
-		print(f"    ✓ Termination took {elapsed:.2f}s (expected ~{expected_time:.2f}s)")
+		print(f"	✓ Termination took {elapsed:.2f}s (expected ~{expected_time:.2f}s)")
 
 		if 0.8 * expected_time <= elapsed <= 1.5 * expected_time:
-			print("    ✓ Timing within expected range")
+			print("	   ✓ Timing within expected range")
 		else:
-			print(f"    ⚠️  Timing outside expected range")
+			print("	   ⚠️  Timing outside expected range")
 
 		assert success, "Termination should succeed even with ignored SIGTERM"
-		print("    ✓ Force termination succeeded after graceful timeout")
+		print("	   ✓ Force termination succeeded after graceful timeout")
 
 	finally:
 		if os.path.exists(script_path):
@@ -112,15 +99,15 @@ def test_process_group_isolation():
 
 	time.sleep(0.2)
 
-	print(f"    Process 1: PID={cmd1.pid}, PGID={cmd1.pgid}")
-	print(f"    Process 2: PID={cmd2.pid}, PGID={cmd2.pgid}")
+	print(f"	Process 1: PID={cmd1.pid}, PGID={cmd1.pgid}")
+	print(f"	Process 2: PID={cmd2.pid}, PGID={cmd2.pgid}")
 
 	# Each process should be its own group leader
 	assert cmd1.pgid == cmd1.pid, "Process should be its own group leader"
 	assert cmd2.pgid == cmd2.pid, "Process should be its own group leader"
 	assert cmd1.pgid != cmd2.pgid, "Processes should have different group IDs"
 
-	print("    ✓ Process group isolation working correctly")
+	print("	   ✓ Process group isolation working correctly")
 
 	# Clean up
 	runner.terminate(graceful=False)
@@ -136,8 +123,8 @@ def test_signal_propagation_verification():
 echo "Process started: $$" > {log_file}
 
 handle_signal() {{
-    echo "Received signal $1: $$" >> {log_file}
-    exit 0
+	echo "Received signal $1: $$" >> {log_file}
+	exit 0
 }}
 
 trap 'handle_signal TERM' TERM
@@ -158,26 +145,26 @@ sleep 30
 			os.unlink(log_file)
 
 		runner = Runner()
-		cmd = runner.run(["bash", script_path], key="logger")
+		runner.run(["bash", script_path], key="logger")
 
-		time.sleep(0.3)  # Let process start and create log
+		time.sleep(0.3)	 # Let process start and create log
 
 		# Propagate SIGTERM
-		runner.propagateSignal(signal.SIGTERM.value)
+		runner.propagate_signal(signal.SIGTERM.value)
 		time.sleep(0.5)
 
 		# Check log file
 		if os.path.exists(log_file):
 			with open(log_file, "r") as f:
 				log_content = f.read()
-			print(f"    Signal log content: {log_content.strip()}")
+			print(f"	Signal log content: {log_content.strip()}")
 
 			if "Received signal TERM" in log_content:
-				print("    ✓ Signal propagation verified in log")
+				print("	   ✓ Signal propagation verified in log")
 			else:
-				print("    ⚠️  Signal may not have been received")
+				print("	   ⚠️  Signal may not have been received")
 		else:
-			print("    ⚠️  Log file not created")
+			print("	   ⚠️  Log file not created")
 
 	finally:
 		# Cleanup
@@ -212,12 +199,4 @@ def run_all_tests():
 
 	print("\n✅ All tests completed successfully!")
 	return True
-
-
-if __name__ == "__main__":
-	try:
-		success = run_all_tests()
-		sys.exit(0 if success else 1)
-	except KeyboardInterrupt:
-		print("\n✓ Interrupt handled correctly")
-		sys.exit(0)
+# EOF

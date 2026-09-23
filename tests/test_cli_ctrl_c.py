@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
-import sys
-import os
+"""Module: test_cli_ctrl_c — tests multiplex behavior."""
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
+from __future__ import annotations
 
 from multiplex import cli
 
@@ -14,7 +12,4 @@ def test_cli_ctrl_c():
 
 	# Simulate CLI args for a long-running command
 	cli(["sleep 30"])
-
-
-if __name__ == "__main__":
-	test_cli_ctrl_c()
+# EOF

@@ -149,11 +149,13 @@ And some examples:
 ## Dependencies (`:DEP`)
 
 Dependencies allow commands to wait for other processes and apply delays.
-Each dependency follows: `[KEY][&][+DELAY…]`, where:
+Each dependency follows: `[KEY][&][+STEP…]`, where:
 
 - **`KEY`**: Process name to wait for
 - **`&`**: Optional indicator to wait for process **start** instead of **end**
-- **`+DELAY`**: Optional delays to apply after the dependency condition is met
+- **`+STEP`**: Optional steps to apply after the dependency condition is met.
+  A step is a duration (`1s`, `500ms`, `2`), the key of another command
+  (`+server` waits for `server` to end), or a guard (`!READY`, see below)
 
 Here are some more examples:
 
@@ -173,6 +175,35 @@ Delays are like previously mentioned:
 - `:A+500ms` ― wait for A, then 500 milliseconds
 - `:B&+1m30s` ― wait for B to start, then 90 seconds
 - `:C+1+0.5` ― wait for C, then 1s, then 0.5s more
+
+### Guards (`!GUARD`, `KEY|GUARD`)
+
+Guards are named conditions that **latch** once matched: as soon as any producer
+matches, every command waiting on the guard is released. They are defined as
+arguments using `@NAME=EXPR` (a glob) or `@NAME:re=EXPR` (a regexp):
+
+- `@ready=*Ready!*` ― glob guard
+- `@port:re=listening on \d+` ― regexp guard
+
+A guard is used as a step in a start or dependency chain:
+
+- `!GUARD` ― wait for the guard to match multiplex's standard input
+- `+KEY|GUARD` ― wait for the guard to match `KEY`'s stdout
+- `+KEY(1)|GUARD`, `+KEY(2)|GUARD`, `+KEY(1,2)|GUARD` ― match stdout, stderr or both
+
+Guards chain with durations and command waits, for example:
+
+```bash
+# Waits for DB to print a line matching `*Ready!*`, then starts the server
+multiplex "@ready=*Ready!*" "DB=mongod --quiet" "+DB|ready=node server.js"
+
+# Waits for a `*Ready!*` line on stdin before running the command
+printf 'Ready!\n' | multiplex "@ready=*Ready!*" "!ready=echo go"
+```
+
+> **NOTE:** input guards (`!GUARD`) consume multiplex's standard input and are
+> only meaningful in foreground mode. Guard names must not collide with action
+> names (`silent`, `noout`, `noerr`, `end`).
 
 ### Actions (`|ACTION`)
 

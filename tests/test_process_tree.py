@@ -1,13 +1,12 @@
-#!/usr/bin/env python3
-import sys
+"""Module: test_process_tree — tests multiplex behavior."""
+
+from __future__ import annotations
+
 import os
 import signal
 import time
-import subprocess
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
-
-from multiplex import run, terminate, Runner, Proc
+from multiplex import Proc, Runner
 
 
 def test_complex_process_tree():
@@ -40,7 +39,7 @@ sleep 30
 		print(f"✓ Found children: {cmd.children}")
 
 		# Verify processes are running
-		all_pids = set([cmd.pid]).union(cmd.children)
+		all_pids = {cmd.pid}.union(cmd.children)
 		running_before = sum(1 for pid in all_pids if pid and Proc.exists(pid))
 		print(f"✓ {running_before} processes running before termination")
 
@@ -52,7 +51,7 @@ sleep 30
 		print(f"✓ Graceful termination completed in {elapsed:.2f}s, success: {success}")
 
 		# Verify all processes are terminated
-		time.sleep(0.5)  # Give processes time to fully terminate
+		time.sleep(0.5)	 # Give processes time to fully terminate
 		running_after = sum(1 for pid in all_pids if pid and Proc.exists(pid))
 		print(f"✓ {running_after} processes running after termination")
 
@@ -75,8 +74,8 @@ def test_signal_propagation():
 	signal_script = """#!/bin/bash
 # Set up signal handler
 cleanup() {
-    echo "Child received signal, cleaning up..."
-    exit 0
+	echo "Child received signal, cleaning up..."
+	exit 0
 }
 trap cleanup TERM INT HUP
 
@@ -99,10 +98,10 @@ sleep 30
 		print(f"✓ Process {cmd.pid} started")
 
 		# Send SIGTERM and see if it's handled
-		runner.propagateSignal(signal.SIGTERM.value)
+		runner.propagate_signal(signal.SIGTERM.value)
 		time.sleep(1)
 
-		if not cmd.isRunning:
+		if not cmd.is_running:
 			print("✅ Signal properly propagated and handled!")
 		else:
 			print("⚠️  Signal may not have been handled")
@@ -112,16 +111,4 @@ sleep 30
 		# Cleanup
 		if os.path.exists(script_path):
 			os.unlink(script_path)
-
-
-if __name__ == "__main__":
-	try:
-		test_complex_process_tree()
-		test_signal_propagation()
-		print("\n✅ All complex process tests passed!")
-	except Exception as e:
-		print(f"\n✗ Test failed: {e}")
-		import traceback
-
-		traceback.print_exc()
-		sys.exit(1)
+# EOF

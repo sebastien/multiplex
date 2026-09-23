@@ -1,4 +1,5 @@
 .site
+deps
 
 # Distribution artifacts
 *.egg-info/

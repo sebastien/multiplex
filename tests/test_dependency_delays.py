@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test cases for delay suffixes within dependencies.
 
 With the new command format, delays are now part of dependencies.
@@ -8,12 +7,9 @@ Format: [KEY][#COLOR][:DEP…][|ACTION…]=COMMAND
 Where DEP is: [KEY][&][+DELAY…]
 """
 
-import sys
-import os
+from __future__ import annotations
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
-
-from multiplex import parse, ParsedCommand, Dependency, parse_delay
+from multiplex import Dependency, ParsedCommand, parse, parse_delay
 
 
 def test_delay_parsing_compatibility():
@@ -160,7 +156,4 @@ def run_tests():
 	test_backward_compatibility_note()
 
 	print("\n✅ All delay suffix in dependencies tests passed!")
-
-
-if __name__ == "__main__":
-	run_tests()
+# EOF

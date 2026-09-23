@@ -1,16 +1,12 @@
-#!/usr/bin/env python3
 """Test cases for process start dependency functionality.
 
 This tests the actual runtime behavior of the & indicator in dependencies,
 ensuring that processes wait for other processes to START rather than END.
 """
 
-import sys
-import os
-import time
-import threading
+from __future__ import annotations
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
+import time
 
 from multiplex import Runner, parse
 
@@ -143,10 +139,4 @@ def test_start_dependency_with_delay():
 	runner.terminate(cmd_a)
 
 	print("✓ Start dependency with delay works correctly")
-
-
-if __name__ == "__main__":
-	test_start_dependency_timing()
-	test_start_vs_end_dependency()
-	test_start_dependency_with_delay()
-	print("All start dependency tests passed!")
+# EOF

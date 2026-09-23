@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test cases for the upgraded command format with dependencies.
 
 This module tests the parsing of the new command format:
@@ -7,12 +6,9 @@ This module tests the parsing of the new command format:
 Where DEP is: [KEY][&][+DELAY…]
 """
 
-import sys
-import os
+from __future__ import annotations
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src/py"))
-
-from multiplex import parse, ParsedCommand, Dependency, parse_dependencies
+from multiplex import Dependency, ParsedCommand, Wait, parse, parse_dependencies
 
 
 def test_basic_command_no_dependencies():
@@ -207,10 +203,10 @@ def test_edge_cases():
 	deps = parse_dependencies("::")
 	assert deps == []
 
-	# Dependencies with invalid delays (should be skipped)
-	deps = parse_dependencies(":A+invalid")
+	# Command waits are typed steps in the dependency chain
+	deps = parse_dependencies(":A+server")
 	assert len(deps) == 1
-	assert deps[0] == Dependency("A", False, [])
+	assert deps[0] == Dependency("A", False, [Wait("server", False)])
 
 	print("✓ Edge cases")
 
@@ -235,7 +231,4 @@ def run_tests():
 	test_edge_cases()
 
 	print("\n✅ All upgraded command format tests passed!")
-
-
-if __name__ == "__main__":
-	run_tests()
+# EOF
