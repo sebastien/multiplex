@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from collections.abc import Callable, Iterable
-from pathlib import Path
-from threading import Thread
-from typing import NamedTuple, ClassVar
+
 import argparse
 import datetime
+import json
 import os
 import re
 import select
+import shutil
 import signal
 import subprocess  # nosec: B404
 import sys
 import threading
 import time
+import uuid
+from collections.abc import Callable, Iterable
+from pathlib import Path
+from threading import Thread
+from typing import ClassVar, NamedTuple
 
 # --
 # # Multiplex
@@ -58,6 +62,7 @@ def SwallowEnd(command: Command, data: int) -> None:
 
 
 RE_PID = re.compile(r"(\d+)")
+RE_RUN_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # Platform detection for /proc filesystem availability
 _HAS_PROC = Path("/proc").exists()
@@ -70,6 +75,40 @@ def shell(command: list[str], input: bytes | None = None) -> bytes | None:
 		command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, input=input
 	)
 	return res.stdout if res.returncode == 0 else None
+
+
+def process_identity(pid: int) -> str | None:
+	"""Returns an OS-provided identity that distinguishes reused PIDs."""
+	if _HAS_PROC:
+		try:
+			# Field 22 is the process start time. The comm field may contain
+			# spaces, so strip the prefix through its closing parenthesis first.
+			stat = Path(f"/proc/{pid}/stat").read_text()
+			return stat[stat.rfind(")") + 2 :].split()[19]
+		except (FileNotFoundError, IndexError, OSError):
+			return None
+	result = shell(["ps", "-o", "lstart=", "-p", str(pid)])
+	return result.decode("utf8").strip() if result else None
+
+
+def atomic_write_json(path: Path, value: dict[str, object]) -> None:
+	"""Atomically writes state files so clients never observe partial JSON."""
+	path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+	temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+	with temporary.open("w", encoding="utf8") as output:
+		json.dump(value, output, sort_keys=True)
+		output.write("\n")
+		output.flush()
+		os.fsync(output.fileno())
+	os.replace(temporary, path)
+
+
+def read_json(path: Path) -> dict[str, object] | None:
+	try:
+		value = json.loads(path.read_text(encoding="utf8"))
+		return value if isinstance(value, dict) else None
+	except (FileNotFoundError, json.JSONDecodeError, OSError):
+		return None
 
 
 class Proc:
@@ -1372,12 +1411,275 @@ def parse(line: str) -> ParsedCommand:
 	)
 
 
+def run_directory(state_dir: str, name: str) -> Path:
+	if not RE_RUN_NAME.fullmatch(name):
+		raise ValueError("Run names may contain only letters, numbers, '_' and '-'")
+	return Path(state_dir).resolve() / name
+
+
+def state_path(state_dir: str, name: str) -> Path:
+	return run_directory(state_dir, name) / "state.json"
+
+
+def state_is_active(state: dict[str, object] | None) -> bool:
+	if not state or state.get("status") != "running":
+		return False
+	pid = state.get("supervisor_pid")
+	identity = state.get("supervisor_identity")
+	if not isinstance(pid, int) or not isinstance(identity, str):
+		return False
+	return Proc.exists(pid) and process_identity(pid) == identity
+
+
+def update_run_state(path: Path, **changes: object) -> dict[str, object]:
+	"""Merges and commits supervisor state, returning the new value."""
+	state = read_json(path) or {}
+	state.update(changes)
+	atomic_write_json(path, state)
+	return state
+
+
+def supervise(
+	name: str, state_dir: str, commands: list[str], timestamp: bool,
+	relative: bool, prune_after: float, run_id: str,
+) -> None:
+	"""Run a detached multiplex session and persist its observable state."""
+	run_dir = run_directory(state_dir, name)
+	state_file = run_dir / "state.json"
+	log_file = run_dir / "output.log"
+	pid = os.getpid()
+	identity = process_identity(pid)
+	if identity is None:
+		raise RuntimeError("Could not determine supervisor process identity")
+
+	with log_file.open("ab", buffering=0) as log:
+		runner = Runner(timestamp=timestamp, relative=relative)
+		runner.formatter.writer = log.write
+		update_run_state(
+			state_file,
+			name=name,
+			run_id=run_id,
+			status="running",
+			supervisor_pid=pid,
+			supervisor_identity=identity,
+			started_at=time.time(),
+			commands=[],
+			command_lines=commands,
+		)
+		completed = False
+		failure: str | None = None
+		try:
+			for line in commands:
+				parsed = parse(line)
+				command = runner.run(
+					parsed.command,
+					key=parsed.key,
+					color=parsed.color,
+					start_delay=parsed.start_delay,
+					dependencies=parsed.dependencies,
+					redirects=parsed.redirects,
+					start_on_output=parsed.start_on_output,
+					actions=parsed.actions,
+				)
+				state = read_json(state_file) or {}
+				entries = state.get("commands")
+				command_entries = entries if isinstance(entries, list) else []
+				command_entries.append(
+					{"key": command.key, "pid": command.pid, "pgid": command.pgid}
+				)
+				update_run_state(state_file, commands=command_entries)
+			runner.join()
+			completed = True
+		except SystemExit:
+			# Runner's signal handler exits the foreground supervisor after it
+			# terminates its children. Keep running long enough to prune state.
+			completed = True
+			pass
+		except Exception as error:
+			failure = str(error)
+			log.write(f"multiplex supervisor failed: {failure}\n".encode())
+		finally:
+			update_run_state(
+				state_file,
+				status="stopped" if completed else "failed",
+				stopped_at=time.time(),
+				error=failure,
+			)
+
+	# Keep the completed log briefly for inspection, then leave no stale state.
+	if prune_after > 0:
+		time.sleep(prune_after)
+	# --replace may have installed a new state directory while this supervisor
+	# was waiting. Never prune a run that does not belong to this supervisor.
+	if (read_json(state_file) or {}).get("run_id") == run_id:
+		shutil.rmtree(run_dir, ignore_errors=True)
+
+
+def cli_start(argv: list[str]) -> None:
+	parser = argparse.ArgumentParser(prog="multiplex start")
+	parser.add_argument("--state-dir", default=".multiplex")
+	parser.add_argument("--replace", action="store_true")
+	parser.add_argument("--prune-after", type=float, default=10.0)
+	parser.add_argument("--time", action="store_true")
+	parser.add_argument("--time-relative", action="store_true")
+	parser.add_argument("name")
+	parser.add_argument("commands", nargs="+")
+	args = parser.parse_args(argv)
+	if args.prune_after < 0:
+		parser.error("--prune-after must not be negative")
+	try:
+		run_dir = run_directory(args.state_dir, args.name)
+	except ValueError as error:
+		parser.error(str(error))
+	state_file = run_dir / "state.json"
+	previous = read_json(state_file)
+	if state_is_active(previous):
+		if not args.replace:
+			parser.error(f"run '{args.name}' is already active (use --replace to replace it)")
+		stop_run(args.state_dir, args.name, wait=True)
+	if run_dir.exists():
+		shutil.rmtree(run_dir, ignore_errors=True)
+	run_dir.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+	try:
+		run_dir.mkdir(mode=0o700)
+	except FileExistsError:
+		parser.error(f"run '{args.name}' is already being started")
+	run_id = uuid.uuid4().hex
+	atomic_write_json(
+		state_file, {"name": args.name, "run_id": run_id, "status": "starting"}
+	)
+
+	child_args = [
+		sys.executable,
+		str(Path(__file__).resolve()),
+		"_supervise",
+		"--state-dir", str(Path(args.state_dir).resolve()),
+		"--prune-after", str(args.prune_after),
+		"--run-id", run_id,
+	]
+	if args.time:
+		child_args.append("--time")
+	if args.time_relative:
+		child_args.append("--time-relative")
+	child_args.extend([args.name, *args.commands])
+	with open(os.devnull, "wb") as devnull:
+		subprocess.Popen(  # nosec: B603
+			child_args, stdin=devnull, stdout=devnull, stderr=devnull,
+			start_new_session=True,
+		)
+	deadline = time.monotonic() + 5.0
+	while time.monotonic() < deadline:
+		state = read_json(state_file)
+		if state_is_active(state):
+			return
+		if state and state.get("status") == "stopped":
+			return
+		if state and state.get("status") == "failed":
+			parser.error(f"run '{args.name}' failed: {state.get('error', 'unknown error')}")
+		time.sleep(0.02)
+	parser.error(f"run '{args.name}' failed to start; inspect {run_dir / 'output.log'}")
+
+
+def stop_run(state_dir: str, name: str, wait: bool = False) -> bool:
+	state_file = state_path(state_dir, name)
+	state = read_json(state_file)
+	if not state_is_active(state):
+		return False
+	pid = state["supervisor_pid"]
+	assert isinstance(pid, int)
+	os.kill(pid, signal.SIGTERM)
+	if wait:
+		deadline = time.monotonic() + 8.0
+		while time.monotonic() < deadline and state_is_active(read_json(state_file)):
+			time.sleep(0.05)
+	return True
+
+
+def cli_stop(argv: list[str]) -> None:
+	parser = argparse.ArgumentParser(prog="multiplex stop")
+	parser.add_argument("--state-dir", default=".multiplex")
+	parser.add_argument("name")
+	args = parser.parse_args(argv)
+	try:
+		stopped = stop_run(args.state_dir, args.name, wait=True)
+	except ValueError as error:
+		parser.error(str(error))
+	if not stopped:
+		parser.error(f"no active run named '{args.name}'")
+
+
+def cli_status(argv: list[str]) -> None:
+	parser = argparse.ArgumentParser(prog="multiplex status")
+	parser.add_argument("--state-dir", default=".multiplex")
+	parser.add_argument("name", nargs="?")
+	args = parser.parse_args(argv)
+	root = Path(args.state_dir)
+	names = [args.name] if args.name else [p.name for p in root.iterdir() if p.is_dir()] if root.exists() else []
+	for name in sorted(names):
+		try:
+			state = read_json(state_path(args.state_dir, name))
+		except ValueError as error:
+			parser.error(str(error))
+		if state_is_active(state):
+			print(f"{name}\trunning\tpid {state['supervisor_pid']}")
+		elif state:
+			print(f"{name}\tstopped")
+
+
+def cli_tail(argv: list[str]) -> None:
+	parser = argparse.ArgumentParser(prog="multiplex tail")
+	parser.add_argument("--state-dir", default=".multiplex")
+	parser.add_argument("-f", "--follow", action="store_true")
+	parser.add_argument("name")
+	args = parser.parse_args(argv)
+	try:
+		log_file = run_directory(args.state_dir, args.name) / "output.log"
+	except ValueError as error:
+		parser.error(str(error))
+	if not log_file.exists():
+		parser.error(f"no log for run '{args.name}'")
+	with log_file.open("rb") as log:
+		while True:
+			data = log.read()
+			if data:
+				os.write(1, data)
+			elif not args.follow or not log_file.exists():
+				return
+			else:
+				time.sleep(0.1)
+
+
+def cli_supervise(argv: list[str]) -> None:
+	parser = argparse.ArgumentParser(prog="multiplex _supervise")
+	parser.add_argument("--state-dir", required=True)
+	parser.add_argument("--prune-after", type=float, required=True)
+	parser.add_argument("--run-id", required=True)
+	parser.add_argument("--time", action="store_true")
+	parser.add_argument("--time-relative", action="store_true")
+	parser.add_argument("name")
+	parser.add_argument("commands", nargs="+")
+	args = parser.parse_args(argv)
+	supervise(args.name, args.state_dir, args.commands, args.time or args.time_relative,
+		args.time_relative, args.prune_after, args.run_id)
+
+
 def cli(argv: list[str] | str = sys.argv[1:]) -> None:
 	"""The command-line interface of this module."""
 	if isinstance(argv, str):
 		argv = [argv]
 	elif not isinstance(argv, (list, tuple)):
 		argv = [str(argv)]
+	if argv:
+		commands = {
+			"start": cli_start,
+			"stop": cli_stop,
+			"status": cli_status,
+			"tail": cli_tail,
+			"_supervise": cli_supervise,
+		}
+		if handler := commands.get(argv[0]):
+			handler(list(argv[1:]))
+			return
 	oparser = argparse.ArgumentParser(
 		prog="multiplex",
 	)

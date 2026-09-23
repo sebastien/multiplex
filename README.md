@@ -237,6 +237,24 @@ Options:
 - `--time`, add timestamps to log entries as (HH:MM:SS)
 - `--time=relative`, show relative timestamps (00:00:00 start)
 
+### Detached runs
+
+Use filesystem-backed runs when processes need to survive the calling terminal.
+State and multiplex-formatted logs are stored in `.multiplex/` in the current
+directory by default.
+
+```bash
+multiplex start dev "API=npm run dev" "WEB=npm run web"
+multiplex status
+multiplex tail -f dev
+multiplex stop dev
+```
+
+`start NAME` fails when `NAME` is already active; use `--replace` to stop and
+replace it. Use `--state-dir PATH` with any lifecycle command to select another
+state directory. Completed runs are pruned after 10 seconds by default; adjust
+that interval with `start --prune-after SECONDS`.
+
 Output:
 
 ```bash
