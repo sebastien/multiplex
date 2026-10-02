@@ -10,6 +10,11 @@ README_PATH = Path(__file__).parent / "README.md"
 with open(README_PATH, "r", encoding="utf-8") as f:
 	long_description = f.read()
 
+EXAMPLES_DIR = Path(__file__).parent / "examples"
+EXAMPLE_FILES = sorted(
+	path for path in EXAMPLES_DIR.glob("*") if path.suffix in (".sh", ".md")
+)
+
 VERSION = "1.0.0"
 REQUIREMENTS = []
 EXTRAS_REQUIRE = {
@@ -108,19 +113,7 @@ setup(
 	data_files=[
 		(
 			"share/multiplex/examples",
-			[
-				"examples/actions-demo.sh",
-				"examples/cicd-pipeline.sh",
-				"examples/complete-demo.sh",
-				"examples/dev-environment.sh",
-				"examples/http-benchmark.sh",
-				"examples/parallel-coordination.sh",
-				"examples/process-delays.sh",
-				"examples/sequential-build.sh",
-				"examples/special-cases.sh",
-				"examples/time-delays.sh",
-				"examples/README.md",
-			],
+			[str(path.relative_to(Path(__file__).parent)) for path in EXAMPLE_FILES],
 		),
 		("share/doc/multiplex", ["README.md", "LICENSE"]),
 	],

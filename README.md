@@ -294,12 +294,12 @@ $│A│echo hello from A
 <│A│hello from A
 =│A│0
 
-# With absolute timestamps (--timestamp)
+# With absolute timestamps (--time)
 12:31:20|$│A│echo hello from A
 12:31:20|<│A│hello from A
 12:31:21|=│A│0
 
-# With relative timestamps (--timestamp -r)
+# With relative timestamps (--time=relative)
 00:00:00|$│A│echo hello from A
 00:00:00|<│A│hello from A
 00:00:01|=│A│0
@@ -378,7 +378,7 @@ Demonstrates advanced timing features:
 
 **Timestamp Demo** ([`examples/timestamp-demo.sh`](examples/timestamp-demo.sh))
 ```bash
-multiplex --timestamp -r "A=echo hello" "B+1s=echo world"
+multiplex --time=relative "A=echo hello" "B+1s=echo world"
 ```
 Shows timestamp functionality with relative timing display.
 

@@ -1,1 +1,12 @@
-deps/sdk/etc/_ruff.toml
+line-length = 88
+indent-width = 4
+
+[format]
+quote-style = "double"
+indent-style = "tab"
+
+
+[lint]
+ignore = ["W191"]
+
+# EOF

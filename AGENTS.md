@@ -1,10 +1,10 @@
 # AGENTS.md - Development Guidelines
 
 ## Build/Test/Lint Commands
-- **Run all tests**: `make test`
-- **Run single test**: `python3 tests/<test-name>.py` (e.g., `python3 tests/unit-parse.py`)
+- **Run all tests**: `make test` (pytest; config in `pytest.ini`)
+- **Run single test**: `pytest tests/test_<name>.py` or `pytest -k <name>`
 - **Lint**: `make lint` or `make check-flakes`
-- **Type check**: `make check-strict`
+- **Type check**: `make check-strict` (mypy --strict + ruff F,I)
 - **Format code**: `make fmt`
 - **Full CI**: `make ci` (runs check + test)
 - **Install deps**: `make prep`
@@ -21,5 +21,5 @@
 
 ## Project Structure
 - Main module: `src/py/multiplex.py`
-- Tests: Individual Python files in `tests/`
+- Tests: `tests/test_*.py` (pytest, `pythonpath=src/py`); shared fixtures in `tests/conftest.py`
 - Binary: `bin/multiplex`

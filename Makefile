@@ -6,5 +6,5 @@ include $(if $(SDK_PATH),$(shell test ! -e "$(SDK_PATH)/setup.mk" && git clone g
 
 check-strict:
 	$(PYTHON) -m mypy src/py/multiplex.py --strict
-	ruff check src/py tests setup.py --select F,I
+	$(PYTHON) -m ruff check src/py tests setup.py --select F,I
 # EOF -- vim: ft=make

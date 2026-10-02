@@ -1558,25 +1558,39 @@ class CLI:
 	@staticmethod
 	def AddTimeOptions(parser: argparse.ArgumentParser) -> None:
 		"""Adds the shared timestamp options to `parser`."""
-		parser.add_argument("--time", action="store_true")
-		parser.add_argument("--time-relative", action="store_true")
+		group = parser.add_mutually_exclusive_group()
+		group.add_argument(
+			"--time",
+			action="store_const",
+			const="absolute",
+			dest="time_mode",
+			default=None,
+			help="Adds absolute timestamps (HH:MM:SS); `--time=relative` for relative",
+		)
+		group.add_argument(
+			"--time-relative",
+			action="store_const",
+			const="relative",
+			dest="time_mode",
+			help="Adds relative timestamps (00:00:00 start)",
+		)
 
 	@staticmethod
-	def ExtractTimeMode(argv: list[str]) -> tuple[list[str], str | None]:
-		"""Extracts `--time[=MODE]`, returning the remaining arguments."""
-		time_mode: str | None = None
-		filtered: list[str] = []
-		for arg in argv:
-			if arg == "--time":
-				time_mode = "absolute"
-			elif arg.startswith("--time="):
-				value = arg.split("=", 1)[1]
-				if value not in ("absolute", "relative"):
-					raise ValueError(f"Invalid time mode: {value}")
-				time_mode = value
+	def NormalizeTimeOptions(argv: list[str]) -> list[str]:
+		"""Rewrites `--time=MODE` to the equivalent long option."""
+		normalized: list[str] = []
+		for argument in argv:
+			if argument.startswith("--time="):
+				mode = argument.split("=", 1)[1]
+				if mode == "absolute":
+					normalized.append("--time")
+				elif mode == "relative":
+					normalized.append("--time-relative")
+				else:
+					raise ValueError(f"Invalid time mode: {mode}")
 			else:
-				filtered.append(arg)
-		return filtered, time_mode
+				normalized.append(argument)
+		return normalized
 
 	@staticmethod
 	def SplitGuards(arguments: list[str]) -> tuple[list[str], list[str]]:
@@ -1611,6 +1625,10 @@ class CLI:
 		CLI.AddTimeOptions(parser)
 		parser.add_argument("name")
 		parser.add_argument("commands", nargs="+")
+		try:
+			argv = CLI.NormalizeTimeOptions(argv)
+		except ValueError as error:
+			parser.error(str(error))
 		args = parser.parse_args(argv)
 		if args.prune_after < 0:
 			parser.error("--prune-after must not be negative")
@@ -1657,10 +1675,8 @@ class CLI:
 			"--run-id",
 			run_id,
 		]
-		if args.time:
-			child_args.append("--time")
-		if args.time_relative:
-			child_args.append("--time-relative")
+		if args.time_mode:
+			child_args.append(f"--time={args.time_mode}")
 		for definition in definitions:
 			child_args.extend(["--guard", definition])
 		child_args.extend([args.name, *commands])
@@ -1762,13 +1778,17 @@ class CLI:
 		CLI.AddTimeOptions(parser)
 		parser.add_argument("name")
 		parser.add_argument("commands", nargs="+")
+		try:
+			argv = CLI.NormalizeTimeOptions(argv)
+		except ValueError as error:
+			parser.error(str(error))
 		args = parser.parse_args(argv)
 		Run.Supervise(
 			args.name,
 			args.state_dir,
 			args.commands,
-			args.time or args.time_relative,
-			args.time_relative,
+			args.time_mode is not None,
+			args.time_mode == "relative",
 			args.prune_after,
 			args.run_id,
 			args.guard,
@@ -1824,30 +1844,12 @@ class CLI:
 			default=False,
 			help="Outputs the parsed command",
 		)
-		time_group = oparser.add_mutually_exclusive_group()
-		time_group.add_argument(
-			"--time",
-			action="store_const",
-			const="absolute",
-			dest="time_mode",
-			default=None,
-			help="Adds absolute timestamps (HH:MM:SS); `--time=relative` for relative",
-		)
-		time_group.add_argument(
-			"--time-relative",
-			action="store_const",
-			const="relative",
-			dest="time_mode",
-			default=None,
-			help="Adds relative timestamps (00:00:00 start)",
-		)
+		CLI.AddTimeOptions(oparser)
 		try:
-			filtered_argv, time_mode = CLI.ExtractTimeMode(argv)
+			argv = CLI.NormalizeTimeOptions(list(argv))
 		except ValueError as error:
 			oparser.error(str(error))
-		args = oparser.parse_args(args=filtered_argv)
-		if time_mode is not None:
-			args.time_mode = time_mode
+		args = oparser.parse_args(args=argv)
 
 		out_path = args.output if args.output and args.output != "-" else None
 		try:
